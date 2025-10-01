@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      # База данных (переопределяем для Docker)
+      - DATABASE_URL=postgresql://postgres:w9XDgujeJUHdv54@db:5432/fortuna_db
+      
+      # Redis (переопределяем для Docker)
+      - REDIS_URL=redis://redis:6379
+      
+      # API конфигурация (переопределяем для Docker)
+      - BACKEND_URL=http://localhost:3000
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
+    restart: unless-stopped
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: fortuna_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: w9XDgujeJUHdv54
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./uploads:/var/www/uploads
+    depends_on:
+      - app
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:

@@ -1,0 +1,115 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model users {
+  id          Int           @id @default(autoincrement())
+  email       String        @unique
+  created_at  DateTime      @default(now()) @db.Timestamptz(6)
+
+  purchases     purchases[]
+  spin_sessions spin_sessions[]
+  spin_results  spin_results[]
+  email_queue   email_queue[]
+
+  @@index([email])
+}
+
+model purchases {
+  id             Int           @id @default(autoincrement())
+  user_id        Int?
+  order_id       String?       @unique
+  amount         Int
+  spins_earned   Int
+  customer_email String?
+  data           Json?
+  created_at     DateTime      @default(now()) @db.Timestamptz(6)
+
+  user          users?         @relation(fields: [user_id], references: [id])
+  spin_sessions spin_sessions[]
+  spin_results  spin_results[]
+}
+
+model prizes {
+  id                 Int           @id @default(autoincrement())
+  name               String
+  total_quantity     Int
+  quantity_remaining Int
+  type               String?
+  image              String?       // URL или путь к изображению приза
+
+  spin_results      spin_results[]
+  mandatory_prizes  mandatory_prizes[]
+}
+
+model spin_sessions {
+  id          Int          @id @default(autoincrement())
+  user_id     Int
+  purchase_id Int
+  spins_total Int
+  spins_used  Int          @default(0)
+  is_active   Boolean      @default(true)
+  created_at  DateTime     @default(now()) @db.Timestamptz(6)
+
+  user     users      @relation(fields: [user_id], references: [id])
+  purchase purchases  @relation(fields: [purchase_id], references: [id])
+  results  spin_results[]
+}
+
+model spin_results {
+  id              Int          @id @default(autoincrement())
+  spin_session_id Int
+  prize_id        Int
+  user_id         Int
+  purchase_id     Int
+  status          String       @default("issued")
+  created_at      DateTime     @default(now()) @db.Timestamptz(6)
+
+  session   spin_sessions @relation(fields: [spin_session_id], references: [id])
+  prize     prizes        @relation(fields: [prize_id], references: [id])
+  user      users         @relation(fields: [user_id], references: [id])
+  purchase  purchases     @relation(fields: [purchase_id], references: [id])
+  email_jobs email_queue[]
+}
+
+model email_queue {
+  id             Int          @id @default(autoincrement())
+  user_id        Int
+  spin_result_id Int
+  subject        String?
+  body           String?
+  send_after     DateTime
+  is_sent        Boolean      @default(false)
+  sent_at        DateTime?
+
+  user       users        @relation(fields: [user_id], references: [id])
+  spinResult spin_results @relation(fields: [spin_result_id], references: [id])
+}
+
+model mandatory_prizes {
+  id                Int      @id @default(autoincrement())
+  prize_id          Int
+  target_quantity   Int      // Сколько должно быть выдано за 24 часа
+  issued_quantity   Int      @default(0) // Сколько уже выдано
+  period_start      DateTime @default(now()) @db.Timestamptz(6) // Начало периода
+  period_end        DateTime @db.Timestamptz(6) // Конец периода (24 часа)
+  is_active         Boolean  @default(true) // Активен ли период
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+
+  prize prizes @relation(fields: [prize_id], references: [id])
+
+  @@index([period_start, period_end])
+  @@index([is_active])
+}
