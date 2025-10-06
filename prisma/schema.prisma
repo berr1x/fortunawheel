@@ -49,6 +49,8 @@ model prizes {
   quantity_remaining Int
   type               String?
   image              String?       // URL или путь к изображению приза
+  from_color         String?       // Цвет начала градиента
+  to_color           String?       // Цвет конца градиента
 
   spin_results      spin_results[]
   mandatory_prizes  mandatory_prizes[]
