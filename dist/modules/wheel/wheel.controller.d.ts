@@ -3,15 +3,37 @@ export declare class WheelController {
     private wheelService;
     constructor(wheelService: WheelService);
     getSession(email: string): Promise<{
-        sessionId: string;
-        spinsRemaining: number;
-        success: boolean;
-        message?: undefined;
-    } | {
         success: boolean;
         message: string;
         sessionId: any;
         spinsRemaining: number;
+        wonPrizes?: undefined;
+    } | {
+        success: boolean;
+        message: string;
+        sessionId: string;
+        spinsRemaining: number;
+        wonPrizes: {
+            id: number;
+            prize: {
+                id: number;
+                name: string;
+                type: string;
+                image: string;
+            };
+            session: {
+                id: number;
+                createdAt: Date;
+            };
+            purchase: {
+                id: number;
+                orderId: string;
+                amount: number;
+                createdAt: Date;
+            };
+            status: string;
+            wonAt: Date;
+        }[];
     }>;
     spin(sessionId: string): Promise<SpinResult>;
     getPrizes(): Promise<any[]>;

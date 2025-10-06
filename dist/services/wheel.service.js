@@ -32,7 +32,12 @@ let WheelService = class WheelService {
                 where: { email },
             });
             if (!user) {
-                throw new common_1.NotFoundException('Пользователь не найден.');
+                return {
+                    success: false,
+                    message: 'Пользователь не найден.',
+                    sessionId: null,
+                    spinsRemaining: 0,
+                };
             }
             const session = await tx.spin_sessions.findFirst({
                 where: {
@@ -41,9 +46,13 @@ let WheelService = class WheelService {
                 },
             });
             if (session) {
+                const wonPrizes = await this.getUserWonPrizes(email);
                 return {
+                    success: true,
+                    message: 'Активная сессия найдена.',
                     sessionId: session.id.toString(),
                     spinsRemaining: session.spins_total - session.spins_used,
+                    wonPrizes: wonPrizes,
                 };
             }
             const purchases = await tx.purchases.findMany({
@@ -55,7 +64,14 @@ let WheelService = class WheelService {
                 },
             });
             if (purchases.length === 0) {
-                throw new common_1.NotFoundException('У вас нет доступных прокруток.');
+                const wonPrizes = await this.getUserWonPrizes(email);
+                return {
+                    success: true,
+                    message: 'У вас нет доступных прокруток.',
+                    sessionId: null,
+                    spinsRemaining: 0,
+                    wonPrizes: wonPrizes,
+                };
             }
             const purchasesWithSessions = await tx.spin_sessions.findMany({
                 where: {
@@ -68,12 +84,26 @@ let WheelService = class WheelService {
             const usedPurchaseIds = new Set(purchasesWithSessions.map(s => s.purchase_id));
             const availablePurchases = purchases.filter(p => !usedPurchaseIds.has(p.id));
             if (availablePurchases.length === 0) {
-                throw new common_1.NotFoundException('Все ваши покупки уже использованы.');
+                const wonPrizes = await this.getUserWonPrizes(email);
+                return {
+                    success: true,
+                    message: 'Все ваши прокруты уже использованы.',
+                    sessionId: null,
+                    spinsRemaining: 0,
+                    wonPrizes: wonPrizes,
+                };
             }
             if (purchaseId) {
                 const purchase = availablePurchases.find(p => p.id === purchaseId);
                 if (!purchase) {
-                    throw new common_1.NotFoundException('Указанная покупка не найдена или уже использована');
+                    const wonPrizes = await this.getUserWonPrizes(email);
+                    return {
+                        success: true,
+                        message: 'Указанная покупка не найдена или уже использована.',
+                        sessionId: null,
+                        spinsRemaining: 0,
+                        wonPrizes: wonPrizes,
+                    };
                 }
                 const newSession = await tx.spin_sessions.create({
                     data: {
@@ -84,9 +114,13 @@ let WheelService = class WheelService {
                         is_active: true,
                     },
                 });
+                const wonPrizes = await this.getUserWonPrizes(email);
                 return {
+                    success: true,
+                    message: 'Новая сессия создана.',
                     sessionId: newSession.id.toString(),
                     spinsRemaining: newSession.spins_total - newSession.spins_used,
+                    wonPrizes: wonPrizes,
                 };
             }
             const selectedPurchase = availablePurchases[0];
@@ -99,9 +133,13 @@ let WheelService = class WheelService {
                     is_active: true,
                 },
             });
+            const wonPrizes = await this.getUserWonPrizes(email);
             return {
+                success: true,
+                message: 'Новая сессия создана.',
                 sessionId: newSession.id.toString(),
                 spinsRemaining: newSession.spins_total - newSession.spins_used,
+                wonPrizes: wonPrizes,
             };
         });
     }
@@ -193,6 +231,8 @@ let WheelService = class WheelService {
                 prizeId: spinResult.prize.id,
                 sessionId: sessionId,
                 prizeImage: this.getPrizeImageUrl(spinResult.prize.image),
+                spinsRemaining: session.spins_total - (session.spins_used + 1),
+                spinsTotal: session.spins_total,
             };
         });
     }

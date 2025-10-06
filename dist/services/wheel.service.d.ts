@@ -15,6 +15,8 @@ export interface SpinResult {
     prizeId?: number;
     sessionId?: string;
     prizeImage?: string | null;
+    spinsRemaining?: number;
+    spinsTotal?: number;
 }
 export declare class WheelService {
     private prisma;
@@ -23,8 +25,37 @@ export declare class WheelService {
     constructor(prisma: PrismaService, redis: RedisService, mandatoryPrizesService: MandatoryPrizesService);
     private getPrizeImageUrl;
     createOrGetSession(email: string, purchaseId?: number): Promise<{
+        success: boolean;
+        message: string;
+        sessionId: any;
+        spinsRemaining: number;
+        wonPrizes?: undefined;
+    } | {
+        success: boolean;
+        message: string;
         sessionId: string;
         spinsRemaining: number;
+        wonPrizes: {
+            id: number;
+            prize: {
+                id: number;
+                name: string;
+                type: string;
+                image: string;
+            };
+            session: {
+                id: number;
+                createdAt: Date;
+            };
+            purchase: {
+                id: number;
+                orderId: string;
+                amount: number;
+                createdAt: Date;
+            };
+            status: string;
+            wonAt: Date;
+        }[];
     }>;
     spinWheel(sessionId: string): Promise<SpinResult>;
     private selectPrize;
