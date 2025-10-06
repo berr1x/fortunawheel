@@ -16,6 +16,14 @@ async function bootstrap() {
 	// Устанавливаем глобальный префикс для всех API маршрутов
 	app.setGlobalPrefix('api');
 	
+	// Настраиваем CORS для работы с фронтендом
+	app.enableCors({
+		origin: true, // Разрешаем все домены в разработке
+		methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+		allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+		credentials: true
+	});
+
 	// Настраиваем глобальную валидацию входящих данных
 	app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
