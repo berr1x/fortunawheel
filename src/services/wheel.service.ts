@@ -208,6 +208,7 @@ export class WheelService {
         success: true,
         message: 'Новая сессия создана.',
         sessionId: newSession.id.toString(),
+        spinsTotal: newSession.spins_total,
         spinsRemaining: newSession.spins_total - newSession.spins_used,
         wonPrizes: wonPrizes,
       };
