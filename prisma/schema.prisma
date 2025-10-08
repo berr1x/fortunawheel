@@ -53,6 +53,7 @@ model prizes {
   to_color           String?       // Цвет конца градиента
   between_color      String?       @db.VarChar(255) // Промежуточный цвет градиента
   text_color         String?       @db.VarChar(255) // Цвет текста
+  number             Int           // Порядок расположения
 
   spin_results      spin_results[]
   mandatory_prizes  mandatory_prizes[]

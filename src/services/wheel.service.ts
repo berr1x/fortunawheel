@@ -11,6 +11,7 @@ interface Prize {
   quantity_remaining: number;
   type: string | null;
   image: string | null;
+  number: number;
 }
 
 interface SpinSession {
@@ -263,7 +264,7 @@ export class WheelService {
           },
         },
         orderBy: {
-          id: 'asc',
+          number: 'asc',
         },
       });
 
@@ -473,7 +474,7 @@ export class WheelService {
         },
       },
       orderBy: {
-        id: 'asc',
+        number: 'asc',
       },
     });
 
