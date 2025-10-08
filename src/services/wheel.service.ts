@@ -75,6 +75,7 @@ export class WheelService {
           message: 'Пользователь не найден.',
           sessionId: null,
           spinsRemaining: 0,
+          spinsTotal: 0,
         };
       }
 
@@ -96,6 +97,7 @@ export class WheelService {
           message: 'Активная сессия найдена.',
           sessionId: session.id.toString(),
           spinsRemaining: session.spins_total - session.spins_used,
+          spinsTotal: session.spins_total,
           wonPrizes: wonPrizes,
         };
       }
@@ -119,6 +121,7 @@ export class WheelService {
           success: true,
           message: 'У вас нет доступных прокруток.',
           sessionId: null,
+          spinsTotal: 0,
           spinsRemaining: 0,
           wonPrizes: wonPrizes,
         };
@@ -146,6 +149,7 @@ export class WheelService {
           success: true,
           message: 'Все ваши прокруты уже использованы.',
           sessionId: null,
+          spinsTotal: 0,
           spinsRemaining: 0,
           wonPrizes: wonPrizes,
         };
@@ -162,6 +166,7 @@ export class WheelService {
             success: true,
             message: 'Указанная покупка не найдена или уже использована.',
             sessionId: null,
+            spinsTotal: 0,
             spinsRemaining: 0,
             wonPrizes: wonPrizes,
           };
@@ -184,6 +189,7 @@ export class WheelService {
           success: true,
           message: 'Новая сессия создана.',
           sessionId: newSession.id.toString(),
+          spinsTotal: newSession.spins_total,
           spinsRemaining: newSession.spins_total - newSession.spins_used,
           wonPrizes: wonPrizes,
         };
