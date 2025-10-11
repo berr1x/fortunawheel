@@ -341,6 +341,7 @@ export class WheelService {
         prize: spinResult.prize.name,
         success: true,
         prizeId: spinResult.prize.id,
+        number: spinResult.prize.number,
         sessionId: sessionId,
         prizeImage: this.getPrizeImageUrl(spinResult.prize.image),
         spinsRemaining: session.spins_total - (session.spins_used + 1), // +1 потому что мы уже увеличили spins_used
