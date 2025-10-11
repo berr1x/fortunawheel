@@ -4,6 +4,7 @@ import { BullModule } from '@nestjs/bull';
 // import { AdminModule } from '@adminjs/nestjs';
 import { TildaModule } from './modules/tilda/tilda.module';
 import { WheelModule } from './modules/wheel/wheel.module';
+import { AdminModule } from './admin/admin.module';
 import { PrismaService } from './services/prisma.service';
 import { RedisService } from './services/redis.service';
 import { EmailQueueService } from './services/email-queue.service';
@@ -46,6 +47,9 @@ import { EmailProcessor } from './processors/email.processor';
 		
 		// Модуль для работы с колесом фортуны
 		WheelModule,
+		
+		// Модуль админки для управления пользователями, призами и обязательными призами
+		AdminModule,
 	],
 	
 	// Провайдеры - сервисы, доступные во всем приложении
