@@ -88,9 +88,71 @@ export class AdminService {
   }
 
   async getUserById(userId: number) {
-    return await this.prisma.users.findUnique({
-      where: { id: userId }
+    const user = await this.prisma.users.findUnique({
+      where: { id: userId },
+      include: {
+        purchases: {
+          select: {
+            amount: true,
+            spins_earned: true,
+            created_at: true
+          }
+        },
+        spin_sessions: {
+          select: {
+            spins_total: true,
+            spins_used: true,
+            is_active: true
+          }
+        },
+        spin_results: {
+          include: {
+            prize: {
+              select: {
+                name: true,
+                type: true
+              }
+            }
+          }
+        }
+      }
     });
+
+    if (!user) {
+      return null;
+    }
+
+    // Обрабатываем данные для удобного отображения
+    const totalPurchaseAmount = user.purchases.reduce((sum, p) => sum + p.amount, 0);
+    const totalSpinsEarned = user.purchases.reduce((sum, p) => sum + p.spins_earned, 0);
+    const totalSpinsUsed = user.spin_sessions.reduce((sum, s) => sum + s.spins_used, 0);
+    
+    // Группируем выигранные призы
+    const wonPrizes = user.spin_results.reduce((acc, result) => {
+      const prizeName = result.prize.name;
+      if (!acc[prizeName]) {
+        acc[prizeName] = {
+          name: prizeName,
+          type: result.prize.type,
+          count: 0
+        };
+      }
+      acc[prizeName].count++;
+      return acc;
+    }, {} as Record<string, { name: string; type: string; count: number }>);
+
+    return {
+      id: user.id,
+      email: user.email,
+      created_at: user.created_at,
+      totalPurchaseAmount,
+      totalSpinsEarned,
+      totalSpinsUsed,
+      spinsRemaining: totalSpinsEarned - totalSpinsUsed,
+      wonPrizes: Object.values(wonPrizes),
+      purchasesCount: user.purchases.length,
+      sessionsCount: user.spin_sessions.length
+    };
   }
 
   /**

@@ -106,7 +106,7 @@ export class TildaService {
    * @returns Количество прокруток
    */
   private calculateSpins(amount: number): number {
-    return Math.floor(amount / 3000);
+    return Math.floor(amount / 50); // 3000
   }
 
   /**
