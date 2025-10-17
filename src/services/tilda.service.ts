@@ -35,16 +35,6 @@ export class TildaService {
 
       this.logger.log(`Processing purchase: email=${Email}, amount=${payment.amount}, spins=${spinsEarned}`);
 
-      // Если прокруток нет, не создаем сессию
-      if (spinsEarned === 0) {
-        this.logger.warn(`No spins earned for amount ${payment.amount}, skipping session creation`);
-        return { 
-          success: true, 
-          message: 'Purchase processed but no spins earned',
-          spinsEarned: 0 
-        };
-      }
-
       return await this.prisma.$transaction(async (tx) => {
         // 1. Создать или найти пользователя по email
         const user = await this.findOrCreateUser(tx, Email);
@@ -57,15 +47,19 @@ export class TildaService {
           customer_email: Email,
         });
 
-        // 3. Создать сессию прокруток
-        const session = await this.createSpinSession(tx, user.id, purchase.id, spinsEarned);
-
-        this.logger.log(`Successfully created session ${session.id} with ${spinsEarned} spins for user ${Email}`);
+        // 3. Создать сессию прокруток только если есть прокрутки
+        let session = null;
+        if (spinsEarned > 0) {
+          session = await this.createSpinSession(tx, user.id, purchase.id, spinsEarned);
+          this.logger.log(`Successfully created session ${session.id} with ${spinsEarned} spins for user ${Email}`);
+        } else {
+          this.logger.warn(`No spins earned for amount ${payment.amount}, skipping session creation`);
+        }
 
         return {
           success: true,
-          message: 'Purchase processed successfully',
-          sessionId: session.id,
+          message: spinsEarned > 0 ? 'Purchase processed successfully' : 'Purchase processed but no spins earned',
+          sessionId: session?.id || null,
           spinsEarned,
           userId: user.id,
         };
