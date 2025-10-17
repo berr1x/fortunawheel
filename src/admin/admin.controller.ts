@@ -20,6 +20,14 @@ export class AdminController {
     return await this.adminService.getUsers(search);
   }
 
+  @Get('users/:id')
+  @ApiOperation({ summary: 'Получить данные пользователя по ID' })
+  @ApiParam({ name: 'id', description: 'ID пользователя' })
+  @ApiResponse({ status: 200, description: 'Данные пользователя получены успешно' })
+  async getUserById(@Param('id') userId: string) {
+    return await this.adminService.getUserById(parseInt(userId));
+  }
+
   @Post('users')
   @ApiOperation({ summary: 'Создать нового пользователя' })
   @ApiBody({

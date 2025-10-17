@@ -87,6 +87,12 @@ export class AdminService {
     });
   }
 
+  async getUserById(userId: number) {
+    return await this.prisma.users.findUnique({
+      where: { id: userId }
+    });
+  }
+
   /**
    * Создать нового пользователя
    */
