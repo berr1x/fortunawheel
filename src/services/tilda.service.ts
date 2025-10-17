@@ -21,7 +21,14 @@ export class TildaService {
   async processPurchase(webhookData: any) {
     try {
       // Валидация входящих данных
-      const { Email, payment } = this.validateWebhookData(webhookData);
+      const { Email, payment } = webhookData;
+
+      if (!Email || !payment || !payment.amount || !payment.orderid) {
+        return {
+          success: false,
+          message: 'Invalid webhook data',
+        };
+      }
 
       // Рассчитываем количество прокруток (каждые 3000 рублей = 1 прокрутка)
       const spinsEarned = this.calculateSpins(Number(payment.amount));
