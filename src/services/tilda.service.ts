@@ -21,16 +21,16 @@ export class TildaService {
   async processPurchase(webhookData: any) {
     try {
       // Валидация входящих данных
-      const { email, amount, order_id } = this.validateWebhookData(webhookData);
+      const { Email, payment } = this.validateWebhookData(webhookData);
 
       // Рассчитываем количество прокруток (каждые 3000 рублей = 1 прокрутка)
-      const spinsEarned = this.calculateSpins(amount);
+      const spinsEarned = this.calculateSpins(Number(payment.amount));
 
-      this.logger.log(`Processing purchase: email=${email}, amount=${amount}, spins=${spinsEarned}`);
+      this.logger.log(`Processing purchase: email=${Email}, amount=${payment.amount}, spins=${spinsEarned}`);
 
       // Если прокруток нет, не создаем сессию
       if (spinsEarned === 0) {
-        this.logger.warn(`No spins earned for amount ${amount}, skipping session creation`);
+        this.logger.warn(`No spins earned for amount ${payment.amount}, skipping session creation`);
         return { 
           success: true, 
           message: 'Purchase processed but no spins earned',
@@ -40,20 +40,20 @@ export class TildaService {
 
       return await this.prisma.$transaction(async (tx) => {
         // 1. Создать или найти пользователя по email
-        const user = await this.findOrCreateUser(tx, email);
+        const user = await this.findOrCreateUser(tx, Email);
 
         // 2. Создать запись о покупке
         const purchase = await this.createPurchase(tx, user.id, {
-          order_id,
-          amount,
+          order_id: payment.orderid,
+          amount: Number(payment.amount),
           spins_earned: spinsEarned,
-          customer_email: email,
+          customer_email: Email,
         });
 
         // 3. Создать сессию прокруток
         const session = await this.createSpinSession(tx, user.id, purchase.id, spinsEarned);
 
-        this.logger.log(`Successfully created session ${session.id} with ${spinsEarned} spins for user ${email}`);
+        this.logger.log(`Successfully created session ${session.id} with ${spinsEarned} spins for user ${Email}`);
 
         return {
           success: true,
@@ -80,21 +80,21 @@ export class TildaService {
       throw new BadRequestException('Webhook data is required');
     }
 
-    const { email, amount, order_id } = data;
+    const { Email, payment } = data;
 
-    if (!email || typeof email !== 'string') {
+    if (!Email || typeof Email !== 'string') {
       throw new BadRequestException('Valid email is required');
     }
 
-    if (!amount || typeof amount !== 'number' || amount <= 0) {
+    if (!payment || typeof Number(payment.amount) !== 'number' || Number(payment.amount) <= 0) {
       throw new BadRequestException('Valid amount is required');
     }
 
-    if (!order_id || typeof order_id !== 'string') {
+    if (!payment.orderid || typeof payment.orderid !== 'string') {
       throw new BadRequestException('Valid order_id is required');
     }
 
-    return { email, amount, order_id };
+    return { Email: Email, payment: payment };
   }
 
   /**
