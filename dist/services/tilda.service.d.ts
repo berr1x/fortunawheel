@@ -2,6 +2,8 @@ import { PrismaService } from './prisma.service';
 export declare class TildaService {
     private prisma;
     private readonly logger;
+    private readonly SENDSAY_API_URL;
+    private readonly WHEEL_EMAIL_HTML;
     constructor(prisma: PrismaService);
     processPurchase(webhookData: any): Promise<{
         success: boolean;
@@ -12,11 +14,11 @@ export declare class TildaService {
     } | {
         success: boolean;
         message: string;
-        spinsEarned: number;
     }>;
     private validateWebhookData;
     private calculateSpins;
     private findOrCreateUser;
     private createPurchase;
     private createSpinSession;
+    private sendWheelEmail;
 }

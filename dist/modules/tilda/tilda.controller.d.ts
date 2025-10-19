@@ -12,6 +12,5 @@ export declare class TildaController {
     } | {
         success: boolean;
         message: string;
-        spinsEarned: number;
     }>;
 }

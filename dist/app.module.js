@@ -12,6 +12,7 @@ const config_1 = require("@nestjs/config");
 const bull_1 = require("@nestjs/bull");
 const tilda_module_1 = require("./modules/tilda/tilda.module");
 const wheel_module_1 = require("./modules/wheel/wheel.module");
+const admin_module_1 = require("./admin/admin.module");
 const prisma_service_1 = require("./services/prisma.service");
 const redis_service_1 = require("./services/redis.service");
 const email_queue_service_1 = require("./services/email-queue.service");
@@ -36,6 +37,7 @@ exports.AppModule = AppModule = __decorate([
             }),
             tilda_module_1.TildaModule,
             wheel_module_1.WheelModule,
+            admin_module_1.AdminModule,
         ],
         providers: [
             prisma_service_1.PrismaService,

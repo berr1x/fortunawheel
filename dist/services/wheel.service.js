@@ -8,6 +8,10 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+var WheelService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.WheelService = void 0;
 const common_1 = require("@nestjs/common");
@@ -15,11 +19,14 @@ const prisma_service_1 = require("./prisma.service");
 const redis_service_1 = require("./redis.service");
 const mandatory_prizes_service_1 = require("./mandatory-prizes.service");
 const api_config_1 = require("../config/api.config");
-let WheelService = class WheelService {
+const axios_1 = __importDefault(require("axios"));
+let WheelService = WheelService_1 = class WheelService {
     constructor(prisma, redis, mandatoryPrizesService) {
         this.prisma = prisma;
         this.redis = redis;
         this.mandatoryPrizesService = mandatoryPrizesService;
+        this.logger = new common_1.Logger(WheelService_1.name);
+        this.SENDSAY_API_URL = 'https://api.sendsay.ru/general/api/v100/json/cakeschool';
     }
     getPrizeImageUrl(imagePath) {
         if (!imagePath)
@@ -37,6 +44,7 @@ let WheelService = class WheelService {
                     message: 'Пользователь не найден.',
                     sessionId: null,
                     spinsRemaining: 0,
+                    spinsTotal: 0,
                 };
             }
             const session = await tx.spin_sessions.findFirst({
@@ -52,6 +60,7 @@ let WheelService = class WheelService {
                     message: 'Активная сессия найдена.',
                     sessionId: session.id.toString(),
                     spinsRemaining: session.spins_total - session.spins_used,
+                    spinsTotal: session.spins_total,
                     wonPrizes: wonPrizes,
                 };
             }
@@ -69,6 +78,7 @@ let WheelService = class WheelService {
                     success: true,
                     message: 'У вас нет доступных прокруток.',
                     sessionId: null,
+                    spinsTotal: 0,
                     spinsRemaining: 0,
                     wonPrizes: wonPrizes,
                 };
@@ -89,6 +99,7 @@ let WheelService = class WheelService {
                     success: true,
                     message: 'Все ваши прокруты уже использованы.',
                     sessionId: null,
+                    spinsTotal: 0,
                     spinsRemaining: 0,
                     wonPrizes: wonPrizes,
                 };
@@ -101,6 +112,7 @@ let WheelService = class WheelService {
                         success: true,
                         message: 'Указанная покупка не найдена или уже использована.',
                         sessionId: null,
+                        spinsTotal: 0,
                         spinsRemaining: 0,
                         wonPrizes: wonPrizes,
                     };
@@ -119,6 +131,7 @@ let WheelService = class WheelService {
                     success: true,
                     message: 'Новая сессия создана.',
                     sessionId: newSession.id.toString(),
+                    spinsTotal: newSession.spins_total,
                     spinsRemaining: newSession.spins_total - newSession.spins_used,
                     wonPrizes: wonPrizes,
                 };
@@ -138,6 +151,7 @@ let WheelService = class WheelService {
                 success: true,
                 message: 'Новая сессия создана.',
                 sessionId: newSession.id.toString(),
+                spinsTotal: newSession.spins_total,
                 spinsRemaining: newSession.spins_total - newSession.spins_used,
                 wonPrizes: wonPrizes,
             };
@@ -173,7 +187,7 @@ let WheelService = class WheelService {
                     },
                 },
                 orderBy: {
-                    id: 'asc',
+                    number: 'asc',
                 },
             });
             if (availablePrizes.length === 0) {
@@ -225,10 +239,18 @@ let WheelService = class WheelService {
                     },
                 });
             }
+            try {
+                await this.sendPrizeEmail(session.user.email, spinResult.prize.name, this.getPrizeImageUrl(spinResult.prize.image));
+                this.logger.log(`Prize email sent successfully to ${session.user.email} for prize: ${spinResult.prize.name}`);
+            }
+            catch (emailError) {
+                this.logger.error(`Failed to send prize email to ${session.user.email}:`, emailError);
+            }
             return {
                 prize: spinResult.prize.name,
                 success: true,
                 prizeId: spinResult.prize.id,
+                number: spinResult.prize.number,
                 sessionId: sessionId,
                 prizeImage: this.getPrizeImageUrl(spinResult.prize.image),
                 spinsRemaining: session.spins_total - (session.spins_used + 1),
@@ -290,7 +312,7 @@ let WheelService = class WheelService {
                 },
             },
             orderBy: {
-                id: 'asc',
+                number: 'asc',
             },
         });
         return prizes.map(prize => ({
@@ -359,9 +381,126 @@ let WheelService = class WheelService {
             wonAt: result.created_at,
         }));
     }
+    createPrizeEmailHTML(prizeName, prizeImage) {
+        const imageHtml = prizeImage
+            ? `<img src="${prizeImage}" alt="${prizeName}" style="width: 200px; height: 200px; object-fit: cover; border-radius: 15px; margin: 20px 0;" />`
+            : '';
+        return `<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Поздравляем! Вы выиграли приз!</title>
+    <style>
+        body {
+            font-family: Inter, sans-serif;
+            background-color: #EDEDED;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #EDEDED;
+            padding: 4%;
+        }
+        .prize-card {
+            background-color: #CBB395;
+            padding: 2em;
+            border-radius: 20px;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .prize-title {
+            font-size: 2rem;
+            font-weight: bold;
+            color: black;
+            margin: 20px 0;
+        }
+        .prize-name {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #2c3e50;
+            margin: 20px 0;
+        }
+        .congratulations {
+            font-size: 1.2rem;
+            color: black;
+            margin: 20px 0;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+        }
+        .footer p {
+            font-size: 1.2rem;
+            color: #000;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="prize-card">
+            <h1 class="prize-title">🎉 Поздравляем! 🎉</h1>
+            <p class="congratulations">Вы выиграли приз в колесе фортуны!</p>
+            <div class="prize-name">${prizeName}</div>
+            ${imageHtml}
+            <p class="congratulations">Спасибо за участие в акции Cake School!</p>
+        </div>
+        
+        <div class="footer">
+            <p>С любовью, команда Cake School</p>
+            <p><a href="https://cake-school.com" style="color: #CBB395;">cake-school.com</a></p>
+        </div>
+    </div>
+</body>
+</html>`;
+    }
+    formatDateForSendsay(date) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        return `${year}-${month}-${day} ${hours}:${minutes}`;
+    }
+    async sendPrizeEmail(email, prizeName, prizeImage) {
+        try {
+            const sendTime = new Date();
+            sendTime.setMinutes(sendTime.getMinutes() + 5);
+            const requestData = {
+                action: 'issue.send',
+                letter: {
+                    message: {
+                        html: this.createPrizeEmailHTML(prizeName, prizeImage)
+                    },
+                    subject: 'Поздравляем! Вы выиграли приз!',
+                    'from.email': 'mail@cake-school.com',
+                    'from.name': 'Колесо фортуны'
+                },
+                group: 'personal',
+                email: email,
+                sendwhen: 'later',
+                'later.time': this.formatDateForSendsay(sendTime)
+            };
+            const response = await axios_1.default.post(this.SENDSAY_API_URL, requestData, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'sendsay apikey=19mD7PhStSbesR1odSpR24Khd3-t_k0_-wkURlnXjWMrRitejwbu4staPSK-i5JKYjRwR6Opr',
+                },
+                timeout: 10000,
+            });
+            this.logger.log(`Prize email scheduled for ${email} at ${this.formatDateForSendsay(sendTime)}:`, response.data);
+            return response.data;
+        }
+        catch (error) {
+            this.logger.error(`Error sending prize email to ${email}:`, error.response?.data || error.message);
+            throw error;
+        }
+    }
 };
 exports.WheelService = WheelService;
-exports.WheelService = WheelService = __decorate([
+exports.WheelService = WheelService = WheelService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         redis_service_1.RedisService,

@@ -7,12 +7,14 @@ export declare class WheelController {
         message: string;
         sessionId: any;
         spinsRemaining: number;
+        spinsTotal: number;
         wonPrizes?: undefined;
     } | {
         success: boolean;
         message: string;
         sessionId: string;
         spinsRemaining: number;
+        spinsTotal: number;
         wonPrizes: {
             id: number;
             prize: {
@@ -34,6 +36,11 @@ export declare class WheelController {
             status: string;
             wonAt: Date;
         }[];
+    } | {
+        success: boolean;
+        message: string;
+        sessionId: any;
+        spinsRemaining: number;
     }>;
     spin(sessionId: string): Promise<SpinResult>;
     getPrizes(): Promise<any[]>;

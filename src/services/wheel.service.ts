@@ -1,8 +1,9 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 import { RedisService } from './redis.service';
 import { MandatoryPrizesService, MandatoryPrize } from './mandatory-prizes.service';
 import { BACKEND_URL } from '../config/api.config';
+import axios from 'axios';
 
 interface Prize {
   id: number;
@@ -39,6 +40,9 @@ export interface SpinResult {
  */
 @Injectable()
 export class WheelService {
+  private readonly logger = new Logger(WheelService.name);
+  private readonly SENDSAY_API_URL = 'https://api.sendsay.ru/general/api/v100/json/cakeschool';
+
   constructor(
     private prisma: PrismaService,
     private redis: RedisService,
@@ -337,6 +341,19 @@ export class WheelService {
         });
       }
 
+      // 9. Отправить письмо о выпавшем призе
+      try {
+        await this.sendPrizeEmail(
+          session.user.email,
+          spinResult.prize.name,
+          this.getPrizeImageUrl(spinResult.prize.image)
+        );
+        this.logger.log(`Prize email sent successfully to ${session.user.email} for prize: ${spinResult.prize.name}`);
+      } catch (emailError) {
+        this.logger.error(`Failed to send prize email to ${session.user.email}:`, emailError);
+        // Не прерываем выполнение, если не удалось отправить письмо
+      }
+
       return {
         prize: spinResult.prize.name,
         success: true,
@@ -558,5 +575,148 @@ export class WheelService {
       status: result.status,
       wonAt: result.created_at,
     }));
+  }
+
+  /**
+   * Создает HTML шаблон для письма с выпавшим призом
+   * @param prizeName - Название приза
+   * @param prizeImage - URL изображения приза
+   * @returns HTML содержимое письма
+   */
+  private createPrizeEmailHTML(prizeName: string, prizeImage: string | null): string {
+    const imageHtml = prizeImage 
+      ? `<img src="${prizeImage}" alt="${prizeName}" style="width: 200px; height: 200px; object-fit: cover; border-radius: 15px; margin: 20px 0;" />`
+      : '';
+
+    return `<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Поздравляем! Вы выиграли приз!</title>
+    <style>
+        body {
+            font-family: Inter, sans-serif;
+            background-color: #EDEDED;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #EDEDED;
+            padding: 4%;
+        }
+        .prize-card {
+            background-color: #CBB395;
+            padding: 2em;
+            border-radius: 20px;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .prize-title {
+            font-size: 2rem;
+            font-weight: bold;
+            color: black;
+            margin: 20px 0;
+        }
+        .prize-name {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #2c3e50;
+            margin: 20px 0;
+        }
+        .congratulations {
+            font-size: 1.2rem;
+            color: black;
+            margin: 20px 0;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+        }
+        .footer p {
+            font-size: 1.2rem;
+            color: #000;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="prize-card">
+            <h1 class="prize-title">🎉 Поздравляем! 🎉</h1>
+            <p class="congratulations">Вы выиграли приз в колесе фортуны!</p>
+            <div class="prize-name">${prizeName}</div>
+            ${imageHtml}
+            <p class="congratulations">Спасибо за участие в акции Cake School!</p>
+        </div>
+        
+        <div class="footer">
+            <p>С любовью, команда Cake School</p>
+            <p><a href="https://cake-school.com" style="color: #CBB395;">cake-school.com</a></p>
+        </div>
+    </div>
+</body>
+</html>`;
+  }
+
+  /**
+   * Форматирует дату для Sendsay API (YYYY:MM:DD hh:mm)
+   * @param date - Дата для форматирования
+   * @returns Отформатированная строка даты
+   */
+  private formatDateForSendsay(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    
+    return `${year}-${month}-${day} ${hours}:${minutes}`;
+  }
+
+  /**
+   * Отправляет письмо о выпавшем призе через Sendsay API
+   * @param email - Email получателя
+   * @param prizeName - Название выпавшего приза
+   * @param prizeImage - URL изображения приза
+   * @returns Результат отправки письма
+   */
+  private async sendPrizeEmail(email: string, prizeName: string, prizeImage: string | null) {
+    try {
+      // Рассчитываем время отправки (текущее время + 5 минут)
+      const sendTime = new Date();
+      sendTime.setMinutes(sendTime.getMinutes() + 5);
+
+      const requestData = {
+        action: 'issue.send',
+        letter: {
+          message: {
+            html: this.createPrizeEmailHTML(prizeName, prizeImage)
+          },
+          subject: 'Поздравляем! Вы выиграли приз!',
+          'from.email': 'mail@cake-school.com',
+          'from.name': 'Колесо фортуны'
+        },
+        group: 'personal',
+        email: email,
+        sendwhen: 'later',
+        'later.time': this.formatDateForSendsay(sendTime)
+      };
+
+      const response = await axios.post(this.SENDSAY_API_URL, requestData, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'sendsay apikey=19mD7PhStSbesR1odSpR24Khd3-t_k0_-wkURlnXjWMrRitejwbu4staPSK-i5JKYjRwR6Opr',
+        },
+        timeout: 10000, // 10 секунд таймаут
+      });
+
+      this.logger.log(`Prize email scheduled for ${email} at ${this.formatDateForSendsay(sendTime)}:`, response.data);
+      return response.data;
+    } catch (error) {
+      this.logger.error(`Error sending prize email to ${email}:`, error.response?.data || error.message);
+      throw error;
+    }
   }
 }

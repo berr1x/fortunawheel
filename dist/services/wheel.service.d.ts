@@ -8,6 +8,7 @@ interface Prize {
     quantity_remaining: number;
     type: string | null;
     image: string | null;
+    number: number;
 }
 export interface SpinResult {
     prize: string;
@@ -22,6 +23,8 @@ export declare class WheelService {
     private prisma;
     private redis;
     private mandatoryPrizesService;
+    private readonly logger;
+    private readonly SENDSAY_API_URL;
     constructor(prisma: PrismaService, redis: RedisService, mandatoryPrizesService: MandatoryPrizesService);
     private getPrizeImageUrl;
     createOrGetSession(email: string, purchaseId?: number): Promise<{
@@ -29,12 +32,14 @@ export declare class WheelService {
         message: string;
         sessionId: any;
         spinsRemaining: number;
+        spinsTotal: number;
         wonPrizes?: undefined;
     } | {
         success: boolean;
         message: string;
         sessionId: string;
         spinsRemaining: number;
+        spinsTotal: number;
         wonPrizes: {
             id: number;
             prize: {
@@ -83,5 +88,8 @@ export declare class WheelService {
         status: string;
         wonAt: Date;
     }[]>;
+    private createPrizeEmailHTML;
+    private formatDateForSendsay;
+    private sendPrizeEmail;
 }
 export {};
