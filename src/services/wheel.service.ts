@@ -663,7 +663,7 @@ export class WheelService {
   /**
    * Форматирует дату для Sendsay API (YYYY:MM:DD hh:mm)
    * @param date - Дата для форматирования
-   * @returns Отформатированная строка даты
+   * @returns Отформатированная строка даты аку
    */
   private formatDateForSendsay(date: Date): string {
     const year = date.getFullYear();
