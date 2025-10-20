@@ -45,7 +45,7 @@ let AdminController = class AdminController {
         return await this.adminService.deletePrize(parseInt(prizeId));
     }
     async updatePrizeQuantity(prizeId, data) {
-        return await this.adminService.updatePrizeQuantity(parseInt(prizeId), data.quantity);
+        return await this.adminService.updatePrizeQuantity(parseInt(prizeId), data.quantity, data.type);
     }
     async getMandatoryPrizes() {
         return await this.adminService.getMandatoryPrizes();
@@ -58,6 +58,30 @@ let AdminController = class AdminController {
     }
     async deleteMandatoryPrize(mandatoryPrizeId) {
         return await this.adminService.deleteMandatoryPrize(parseInt(mandatoryPrizeId));
+    }
+    async getPurchasesData() {
+        return await this.adminService.getPurchasesData();
+    }
+    async exportPurchasesToExcel(res) {
+        const buffer = await this.adminService.exportPurchasesToExcel();
+        res.set({
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition': 'attachment; filename="purchases.xlsx"',
+            'Content-Length': buffer.length.toString(),
+        });
+        res.send(buffer);
+    }
+    async getSpinsData() {
+        return await this.adminService.getSpinsData();
+    }
+    async exportSpinsToExcel(res) {
+        const buffer = await this.adminService.exportSpinsToExcel();
+        res.set({
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition': 'attachment; filename="spins.xlsx"',
+            'Content-Length': buffer.length.toString(),
+        });
+        res.send(buffer);
     }
 };
 exports.AdminController = AdminController;
@@ -211,7 +235,8 @@ __decorate([
         schema: {
             type: 'object',
             properties: {
-                quantity: { type: 'number', description: 'Новое количество' }
+                quantity: { type: 'number', description: 'Новое количество' },
+                type: { type: 'string', description: 'Частота выпадения (many, rare, limited)' }
             },
             required: ['quantity']
         }
@@ -290,6 +315,137 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], AdminController.prototype, "deleteMandatoryPrize", null);
+__decorate([
+    (0, common_1.Get)('export/purchases'),
+    (0, swagger_1.ApiOperation)({ summary: 'Получить данные о покупках' }),
+    (0, swagger_1.ApiResponse)({
+        status: 200,
+        description: 'Данные о покупках получены успешно',
+        schema: {
+            type: 'array',
+            items: {
+                type: 'object',
+                properties: {
+                    name: { type: 'string', example: 'Не указано' },
+                    phone: { type: 'string', example: 'Не указан' },
+                    email: { type: 'string', example: 'test@mail.ru' },
+                    product: { type: 'string', example: 'Прокрутки колеса фортуны' },
+                    amount: { type: 'number', example: 4000 },
+                    spinsEarned: { type: 'number', example: 10 },
+                    createdAt: { type: 'string', format: 'date-time', example: '2025-10-20T21:26:08.222Z' }
+                }
+            },
+            example: [
+                {
+                    "name": "Не указано",
+                    "phone": "Не указан",
+                    "email": "test@mail.ru",
+                    "product": "Прокрутки колеса фортуны",
+                    "amount": 4000,
+                    "spinsEarned": 10,
+                    "createdAt": "2025-10-20T21:26:08.222Z"
+                },
+                {
+                    "name": "Не указано",
+                    "phone": "Не указан",
+                    "email": "kepera@inbox.ru",
+                    "product": "Прокрутки колеса фортуны",
+                    "amount": 50,
+                    "spinsEarned": 1,
+                    "createdAt": "2025-10-19T11:59:21.992Z"
+                },
+                {
+                    "name": "Не указано",
+                    "phone": "Не указан",
+                    "email": "kepera@inbox.ru",
+                    "product": "Прокрутки колеса фортуны",
+                    "amount": 50,
+                    "spinsEarned": 1,
+                    "createdAt": "2025-10-19T11:44:40.302Z"
+                },
+                {
+                    "name": "Не указано",
+                    "phone": "Не указан",
+                    "email": "timur@gmail.com",
+                    "product": "Прокрутки колеса фортуны",
+                    "amount": 10000,
+                    "spinsEarned": 100,
+                    "createdAt": "2025-10-01T14:59:11.916Z"
+                }
+            ]
+        }
+    }),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], AdminController.prototype, "getPurchasesData", null);
+__decorate([
+    (0, common_1.Get)('export/purchases/excel'),
+    (0, swagger_1.ApiOperation)({ summary: 'Экспортировать данные о покупках в Excel' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Excel файл с данными о покупках' }),
+    __param(0, (0, common_1.Res)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AdminController.prototype, "exportPurchasesToExcel", null);
+__decorate([
+    (0, common_1.Get)('export/spins'),
+    (0, swagger_1.ApiOperation)({ summary: 'Получить данные о прокрутках' }),
+    (0, swagger_1.ApiResponse)({
+        status: 200,
+        description: 'Данные о прокрутках получены успешно',
+        schema: {
+            type: 'array',
+            items: {
+                type: 'object',
+                properties: {
+                    name: { type: 'string', example: 'Не указано' },
+                    phone: { type: 'string', example: 'Не указан' },
+                    email: { type: 'string', example: 'test@mail.ru' },
+                    purchaseAmount: { type: 'number', example: 4000 },
+                    totalSpins: { type: 'number', example: 10 },
+                    spinsRemaining: { type: 'number', example: 5 },
+                    wonPrizes: { type: 'string', example: 'Промокод MY CAKE (2), Миксер стационарный (1)' },
+                    createdAt: { type: 'string', format: 'date-time', example: '2025-10-20T21:26:08.222Z' }
+                }
+            },
+            example: [
+                {
+                    "name": "Не указано",
+                    "phone": "Не указан",
+                    "email": "test@mail.ru",
+                    "purchaseAmount": 4000,
+                    "totalSpins": 10,
+                    "spinsRemaining": 5,
+                    "wonPrizes": "Промокод MY CAKE (2), Миксер стационарный (1)",
+                    "createdAt": "2025-10-20T21:26:08.222Z"
+                },
+                {
+                    "name": "Не указано",
+                    "phone": "Не указан",
+                    "email": "kepera@inbox.ru",
+                    "purchaseAmount": 100,
+                    "totalSpins": 2,
+                    "spinsRemaining": 0,
+                    "wonPrizes": "Блендер (2)",
+                    "createdAt": "2025-10-19T11:59:21.992Z"
+                }
+            ]
+        }
+    }),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], AdminController.prototype, "getSpinsData", null);
+__decorate([
+    (0, common_1.Get)('export/spins/excel'),
+    (0, swagger_1.ApiOperation)({ summary: 'Экспортировать данные о прокрутках в Excel' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Excel файл с данными о прокрутках' }),
+    __param(0, (0, common_1.Res)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AdminController.prototype, "exportSpinsToExcel", null);
 exports.AdminController = AdminController = __decorate([
     (0, swagger_1.ApiTags)('Admin'),
     (0, common_1.Controller)('admin'),

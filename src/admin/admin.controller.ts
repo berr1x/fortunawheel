@@ -1,6 +1,7 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpStatus, HttpCode } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpStatus, HttpCode, Res } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
+import { Response } from 'express';
 
 /**
  * Контроллер админки для управления пользователями, призами и обязательными призами
@@ -174,7 +175,8 @@ export class AdminController {
     schema: {
       type: 'object',
       properties: {
-        quantity: { type: 'number', description: 'Новое количество' }
+        quantity: { type: 'number', description: 'Новое количество' },
+        type: { type: 'string', description: 'Частота выпадения (many, rare, limited)' }
       },
       required: ['quantity']
     }
@@ -183,9 +185,9 @@ export class AdminController {
   @ApiResponse({ status: 404, description: 'Приз не найден' })
   async updatePrizeQuantity(
     @Param('id') prizeId: string,
-    @Body() data: { quantity: number }
+    @Body() data: { quantity: number, type: string }
   ) {
-    return await this.adminService.updatePrizeQuantity(parseInt(prizeId), data.quantity);
+    return await this.adminService.updatePrizeQuantity(parseInt(prizeId), data.quantity, data.type);
   }
 
   // ========== УПРАВЛЕНИЕ ОБЯЗАТЕЛЬНЫМИ ПРИЗАМИ ==========
@@ -260,5 +262,148 @@ export class AdminController {
   @ApiResponse({ status: 404, description: 'Обязательный приз не найден' })
   async deleteMandatoryPrize(@Param('id') mandatoryPrizeId: string) {
     return await this.adminService.deleteMandatoryPrize(parseInt(mandatoryPrizeId));
+  }
+
+  // ========== ЭКСПОРТ ДАННЫХ ==========
+
+  @Get('export/purchases')
+  @ApiOperation({ summary: 'Получить данные о покупках' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Данные о покупках получены успешно',
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', example: 'Не указано' },
+          phone: { type: 'string', example: 'Не указан' },
+          email: { type: 'string', example: 'test@mail.ru' },
+          product: { type: 'string', example: 'Прокрутки колеса фортуны' },
+          amount: { type: 'number', example: 4000 },
+          spinsEarned: { type: 'number', example: 10 },
+          createdAt: { type: 'string', format: 'date-time', example: '2025-10-20T21:26:08.222Z' }
+        }
+      },
+      example: [
+        {
+          "name": "Не указано",
+          "phone": "Не указан",
+          "email": "test@mail.ru",
+          "product": "Прокрутки колеса фортуны",
+          "amount": 4000,
+          "spinsEarned": 10,
+          "createdAt": "2025-10-20T21:26:08.222Z"
+        },
+        {
+          "name": "Не указано",
+          "phone": "Не указан",
+          "email": "kepera@inbox.ru",
+          "product": "Прокрутки колеса фортуны",
+          "amount": 50,
+          "spinsEarned": 1,
+          "createdAt": "2025-10-19T11:59:21.992Z"
+        },
+        {
+          "name": "Не указано",
+          "phone": "Не указан",
+          "email": "kepera@inbox.ru",
+          "product": "Прокрутки колеса фортуны",
+          "amount": 50,
+          "spinsEarned": 1,
+          "createdAt": "2025-10-19T11:44:40.302Z"
+        },
+        {
+          "name": "Не указано",
+          "phone": "Не указан",
+          "email": "timur@gmail.com",
+          "product": "Прокрутки колеса фортуны",
+          "amount": 10000,
+          "spinsEarned": 100,
+          "createdAt": "2025-10-01T14:59:11.916Z"
+        }
+      ]
+    }
+  })
+  async getPurchasesData() {
+    return await this.adminService.getPurchasesData();
+  }
+
+  @Get('export/purchases/excel')
+  @ApiOperation({ summary: 'Экспортировать данные о покупках в Excel' })
+  @ApiResponse({ status: 200, description: 'Excel файл с данными о покупках' })
+  async exportPurchasesToExcel(@Res() res: Response) {
+    const buffer = await this.adminService.exportPurchasesToExcel();
+    
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': 'attachment; filename="purchases.xlsx"',
+      'Content-Length': buffer.length.toString(),
+    });
+    
+    res.send(buffer);
+  }
+
+  @Get('export/spins')
+  @ApiOperation({ summary: 'Получить данные о прокрутках' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Данные о прокрутках получены успешно',
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', example: 'Не указано' },
+          phone: { type: 'string', example: 'Не указан' },
+          email: { type: 'string', example: 'test@mail.ru' },
+          purchaseAmount: { type: 'number', example: 4000 },
+          totalSpins: { type: 'number', example: 10 },
+          spinsRemaining: { type: 'number', example: 5 },
+          wonPrizes: { type: 'string', example: 'Промокод MY CAKE (2), Миксер стационарный (1)' },
+          createdAt: { type: 'string', format: 'date-time', example: '2025-10-20T21:26:08.222Z' }
+        }
+      },
+      example: [
+        {
+          "name": "Не указано",
+          "phone": "Не указан",
+          "email": "test@mail.ru",
+          "purchaseAmount": 4000,
+          "totalSpins": 10,
+          "spinsRemaining": 5,
+          "wonPrizes": "Промокод MY CAKE (2), Миксер стационарный (1)",
+          "createdAt": "2025-10-20T21:26:08.222Z"
+        },
+        {
+          "name": "Не указано",
+          "phone": "Не указан",
+          "email": "kepera@inbox.ru",
+          "purchaseAmount": 100,
+          "totalSpins": 2,
+          "spinsRemaining": 0,
+          "wonPrizes": "Блендер (2)",
+          "createdAt": "2025-10-19T11:59:21.992Z"
+        }
+      ]
+    }
+  })
+  async getSpinsData() {
+    return await this.adminService.getSpinsData();
+  }
+
+  @Get('export/spins/excel')
+  @ApiOperation({ summary: 'Экспортировать данные о прокрутках в Excel' })
+  @ApiResponse({ status: 200, description: 'Excel файл с данными о прокрутках' })
+  async exportSpinsToExcel(@Res() res: Response) {
+    const buffer = await this.adminService.exportSpinsToExcel();
+    
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': 'attachment; filename="spins.xlsx"',
+      'Content-Length': buffer.length.toString(),
+    });
+    
+    res.send(buffer);
   }
 }

@@ -11,6 +11,7 @@ export declare class AdminService {
         totalSpinsUsed: number;
         spinsRemaining: number;
         wonPrizes: {
+            id: number;
             name: string;
             type: string;
             count: number;
@@ -27,6 +28,7 @@ export declare class AdminService {
         totalSpinsUsed: number;
         spinsRemaining: number;
         wonPrizes: {
+            id: number;
             name: string;
             type: string;
             count: number;
@@ -114,7 +116,7 @@ export declare class AdminService {
     deletePrize(prizeId: number): Promise<{
         message: string;
     }>;
-    updatePrizeQuantity(prizeId: number, quantity: number): Promise<{
+    updatePrizeQuantity(prizeId: number, quantity: number, type: string): Promise<{
         number: number;
         type: string | null;
         id: number;
@@ -178,4 +180,25 @@ export declare class AdminService {
     deleteMandatoryPrize(mandatoryPrizeId: number): Promise<{
         message: string;
     }>;
+    getPurchasesData(): Promise<{
+        name: string;
+        phone: string;
+        email: string;
+        product: string;
+        amount: number;
+        spinsEarned: number;
+        createdAt: Date;
+    }[]>;
+    getSpinsData(): Promise<{
+        name: string;
+        phone: string;
+        email: string;
+        purchaseAmount: number;
+        totalSpins: number;
+        spinsRemaining: number;
+        wonPrizes: string;
+        createdAt: Date;
+    }[]>;
+    exportPurchasesToExcel(): Promise<any>;
+    exportSpinsToExcel(): Promise<any>;
 }

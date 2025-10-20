@@ -1,4 +1,5 @@
 import { AdminService } from './admin.service';
+import { Response } from 'express';
 export declare class AdminController {
     private readonly adminService;
     constructor(adminService: AdminService);
@@ -11,6 +12,7 @@ export declare class AdminController {
         totalSpinsUsed: number;
         spinsRemaining: number;
         wonPrizes: {
+            id: number;
             name: string;
             type: string;
             count: number;
@@ -27,6 +29,7 @@ export declare class AdminController {
         totalSpinsUsed: number;
         spinsRemaining: number;
         wonPrizes: {
+            id: number;
             name: string;
             type: string;
             count: number;
@@ -116,6 +119,7 @@ export declare class AdminController {
     }>;
     updatePrizeQuantity(prizeId: string, data: {
         quantity: number;
+        type: string;
     }): Promise<{
         number: number;
         type: string | null;
@@ -180,4 +184,25 @@ export declare class AdminController {
     deleteMandatoryPrize(mandatoryPrizeId: string): Promise<{
         message: string;
     }>;
+    getPurchasesData(): Promise<{
+        name: string;
+        phone: string;
+        email: string;
+        product: string;
+        amount: number;
+        spinsEarned: number;
+        createdAt: Date;
+    }[]>;
+    exportPurchasesToExcel(res: Response): Promise<void>;
+    getSpinsData(): Promise<{
+        name: string;
+        phone: string;
+        email: string;
+        purchaseAmount: number;
+        totalSpins: number;
+        spinsRemaining: number;
+        wonPrizes: string;
+        createdAt: Date;
+    }[]>;
+    exportSpinsToExcel(res: Response): Promise<void>;
 }

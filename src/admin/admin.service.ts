@@ -1,5 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../services/prisma.service';
+import * as XLSX from 'xlsx';
+
 
 /**
  * Сервис для админки - управление пользователями, призами и обязательными призами
@@ -42,6 +44,7 @@ export class AdminService {
           include: {
             prize: {
               select: {
+                id: true,
                 name: true,
                 type: true
               }
@@ -58,19 +61,21 @@ export class AdminService {
       const totalSpinsEarned = user.purchases.reduce((sum, p) => sum + p.spins_earned, 0);
       const totalSpinsUsed = user.spin_sessions.reduce((sum, s) => sum + s.spins_used, 0);
       
-      // Группируем выигранные призы
+      // Группируем выигранные призы по ID приза для правильного подсчета дубликатов
       const wonPrizes = user.spin_results.reduce((acc, result) => {
+        const prizeId = result.prize.id;
         const prizeName = result.prize.name;
-        if (!acc[prizeName]) {
-          acc[prizeName] = {
+        if (!acc[prizeId]) {
+          acc[prizeId] = {
+            id: prizeId,
             name: prizeName,
             type: result.prize.type,
             count: 0
           };
         }
-        acc[prizeName].count++;
+        acc[prizeId].count++;
         return acc;
-      }, {} as Record<string, { name: string; type: string; count: number }>);
+      }, {} as Record<number, { id: number; name: string; type: string; count: number }>);
 
       return {
         id: user.id,
@@ -109,6 +114,7 @@ export class AdminService {
           include: {
             prize: {
               select: {
+                id: true,
                 name: true,
                 type: true
               }
@@ -127,19 +133,21 @@ export class AdminService {
     const totalSpinsEarned = user.purchases.reduce((sum, p) => sum + p.spins_earned, 0);
     const totalSpinsUsed = user.spin_sessions.reduce((sum, s) => sum + s.spins_used, 0);
     
-    // Группируем выигранные призы
+    // Группируем выигранные призы по ID приза для правильного подсчета дубликатов
     const wonPrizes = user.spin_results.reduce((acc, result) => {
+      const prizeId = result.prize.id;
       const prizeName = result.prize.name;
-      if (!acc[prizeName]) {
-        acc[prizeName] = {
+      if (!acc[prizeId]) {
+        acc[prizeId] = {
+          id: prizeId,
           name: prizeName,
           type: result.prize.type,
           count: 0
         };
       }
-      acc[prizeName].count++;
+      acc[prizeId].count++;
       return acc;
-    }, {} as Record<string, { name: string; type: string; count: number }>);
+    }, {} as Record<number, { id: number; name: string; type: string; count: number }>);
 
     return {
       id: user.id,
@@ -268,7 +276,8 @@ export class AdminService {
         if (session && spinsCount !== undefined) {
           await this.prisma.spin_sessions.update({
             where: { id: session.id },
-            data: { spins_total: spinsCount }
+            data: { spins_total: spinsCount, is_active: session.spins_total > session.spins_used ? true : false }
+
           });
         }
       }
@@ -369,10 +378,12 @@ export class AdminService {
     return { message: 'Приз успешно удален' };
   }
 
+
+
   /**
    * Обновить количество выпадений приза
    */
-  async updatePrizeQuantity(prizeId: number, quantity: number) {
+  async updatePrizeQuantity(prizeId: number, quantity: number, type: string) {
     const prize = await this.prisma.prizes.findUnique({
       where: { id: prizeId }
     });
@@ -383,7 +394,7 @@ export class AdminService {
 
     return await this.prisma.prizes.update({
       where: { id: prizeId },
-      data: { quantity_remaining: quantity }
+      data: { quantity_remaining: quantity, type: type }
     });
   }
 
@@ -487,5 +498,126 @@ export class AdminService {
     });
 
     return { message: 'Обязательный приз успешно удален' };
+  }
+
+  // ========== ЭКСПОРТ ДАННЫХ ==========
+
+  /**
+   * Получить данные о покупках для экспорта в Excel
+   */
+  async getPurchasesData() {
+    const purchases = await this.prisma.purchases.findMany({
+      include: {
+        user: {
+          select: {
+            email: true
+          }
+        }
+      },
+      orderBy: { created_at: 'desc' }
+    });
+
+    return purchases.map(purchase => ({
+      name: 'Не указано', // Заглушка, пока нет поля в базе
+      phone: 'Не указан', // Заглушка, пока нет поля в базе
+      email: purchase.user.email,
+      product: 'Прокрутки колеса фортуны', // Заглушка, пока нет поля в базе
+      amount: purchase.amount,
+      spinsEarned: purchase.spins_earned,
+      createdAt: purchase.created_at
+    }));
+  }
+
+  /**
+   * Получить данные о прокрутках для экспорта в Excel
+   */
+  async getSpinsData() {
+    const users = await this.prisma.users.findMany({
+      include: {
+        purchases: {
+          select: {
+            amount: true,
+            spins_earned: true
+          }
+        },
+        spin_sessions: {
+          select: {
+            spins_total: true,
+            spins_used: true
+          }
+        },
+        spin_results: {
+          include: {
+            prize: {
+              select: {
+                name: true
+              }
+            }
+          }
+        }
+      },
+      orderBy: { created_at: 'desc' }
+    });
+
+    return users.map(user => {
+      const totalPurchaseAmount = user.purchases.reduce((sum, p) => sum + p.amount, 0);
+      const totalSpinsEarned = user.purchases.reduce((sum, p) => sum + p.spins_earned, 0);
+      const totalSpinsUsed = user.spin_sessions.reduce((sum, s) => sum + s.spins_used, 0);
+      const spinsRemaining = totalSpinsEarned - totalSpinsUsed;
+
+      // Группируем выигранные призы
+      const wonPrizes = user.spin_results.reduce((acc, result) => {
+        const prizeName = result.prize.name;
+        if (!acc[prizeName]) {
+          acc[prizeName] = 0;
+        }
+        acc[prizeName]++;
+        return acc;
+      }, {} as Record<string, number>);
+
+      // Формируем строку с призами
+      const prizesString = Object.entries(wonPrizes)
+        .map(([name, count]) => `${name} (${count})`)
+        .join(', ');
+
+      return {
+        name: 'Не указано', // Заглушка, пока нет поля в базе
+        phone: 'Не указан', // Заглушка, пока нет поля в базе
+        email: user.email,
+        purchaseAmount: totalPurchaseAmount,
+        totalSpins: totalSpinsEarned,
+        spinsRemaining: spinsRemaining,
+        wonPrizes: prizesString || 'Нет выигранных призов',
+        createdAt: user.created_at
+      };
+    });
+  }
+
+  /**
+   * Экспортировать данные о покупках в Excel
+   */
+  async exportPurchasesToExcel() {
+    const data = await this.getPurchasesData();
+    
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Покупки');
+
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    return buffer;
+  }
+
+  /**
+   * Экспортировать данные о прокрутках в Excel
+   */
+  async exportSpinsToExcel() {
+    const data = await this.getSpinsData();
+    
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Прокрутки');
+
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    return buffer;
   }
 }
