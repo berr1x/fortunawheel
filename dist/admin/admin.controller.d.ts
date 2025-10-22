@@ -65,6 +65,7 @@ export declare class AdminController {
         to_color: string | null;
         between_color: string | null;
         text_color: string | null;
+        rotation: number | null;
     }[]>;
     createPrize(data: {
         name: string;
@@ -89,6 +90,7 @@ export declare class AdminController {
         to_color: string | null;
         between_color: string | null;
         text_color: string | null;
+        rotation: number | null;
     }>;
     updatePrize(prizeId: string, data: {
         name?: string;
@@ -113,6 +115,7 @@ export declare class AdminController {
         to_color: string | null;
         between_color: string | null;
         text_color: string | null;
+        rotation: number | null;
     }>;
     deletePrize(prizeId: string): Promise<{
         message: string;
@@ -132,6 +135,7 @@ export declare class AdminController {
         to_color: string | null;
         between_color: string | null;
         text_color: string | null;
+        rotation: number | null;
     }>;
     getMandatoryPrizes(): Promise<({
         prize: {

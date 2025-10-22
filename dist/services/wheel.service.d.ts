@@ -9,6 +9,7 @@ interface Prize {
     type: string | null;
     image: string | null;
     number: number;
+    rotation?: number | null;
 }
 export interface SpinResult {
     prize: string;
@@ -64,6 +65,8 @@ export declare class WheelService {
     }>;
     spinWheel(sessionId: string): Promise<SpinResult>;
     private selectPrize;
+    private selectPrizeByDistribution;
+    private selectWeightedPrize;
     private getMandatoryPrizes;
     private selectRandomPrize;
     getAvailablePrizes(): Promise<Prize[]>;

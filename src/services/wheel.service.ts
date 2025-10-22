@@ -13,6 +13,7 @@ interface Prize {
   type: string | null;
   image: string | null;
   number: number;
+  rotation?: number | null;
 }
 
 interface SpinSession {
@@ -368,11 +369,13 @@ export class WheelService {
   }
 
   /**
-   * Выбор приза по алгоритму вероятностей
+   * Выбор приза по новому алгоритму вероятностей
    * Реализует логику:
-   * - Первые 5 прокруток: неповторяющиеся подарки
-   * - 6+ прокруток: могут повторяться, но обязательно выпадают подарки с большим количеством
-   * - Обязательные подарки в течение 24 часов
+   * - Первые 4 прокрутки: неповторяющиеся подарки
+   * - 5+ прокруток: могут повторяться
+   * - Распределение: 80% обильные, 10% ограниченные, 1% редкие
+   * - Ограничения на призы с количеством < 20
+   * - Предотвращение повторных редких призов
    * 
    * @param availablePrizes - Доступные призы
    * @param previousResults - Предыдущие результаты прокруток
@@ -392,8 +395,24 @@ export class WheelService {
     // Получаем обязательные подарки за последние 24 часа
     const mandatoryPrizes = await this.getMandatoryPrizes(tx);
     
-    // Логика для первых 5 прокруток - неповторяющиеся подарки
-    if (spinsUsed < 5) {
+    // Определяем категории призов
+    const abundantPrizes = availablePrizes.filter(prize => 
+      prize.type === 'many' || prize.quantity_remaining > 1000
+    );
+    const limitedPrizes = availablePrizes.filter(prize => 
+      prize.type === 'limited' || (prize.quantity_remaining >= 100 && prize.quantity_remaining <= 999)
+    );
+    const rarePrizes = availablePrizes.filter(prize => 
+      prize.type === 'rare' || prize.quantity_remaining <= 10
+    );
+    
+    // Призы с ограничениями (количество < 20)
+    const restrictedPrizes = availablePrizes.filter(prize => 
+      prize.quantity_remaining < 20
+    );
+    
+    // Логика для первых 4 прокруток - неповторяющиеся подарки
+    if (spinsUsed < 4) {
       const unclaimedPrizes = availablePrizes.filter(prize => 
         !wonPrizeIds.includes(prize.id)
       );
@@ -408,12 +427,13 @@ export class WheelService {
           return this.selectRandomPrize(unclaimedMandatory);
         }
         
-        return this.selectRandomPrize(unclaimedPrizes);
+        // Применяем новое распределение к неповторяющимся призам
+        return this.selectPrizeByDistribution(unclaimedPrizes, wonPrizeIds, previousResults);
       }
     }
     
-    // Логика для 6+ прокруток - могут повторяться
-    if (spinsUsed >= 5) {
+    // Логика для 5+ прокруток - могут повторяться
+    if (spinsUsed >= 4) {
       // Сначала проверяем обязательные подарки
       const availableMandatory = availablePrizes.filter(prize => 
         mandatoryPrizes.some(mp => mp.prize.id === prize.id)
@@ -426,31 +446,149 @@ export class WheelService {
         }
       }
       
-      // Разделяем призы по типам для взвешенного выбора
-      const abundantPrizes = availablePrizes.filter(prize => 
-        prize.type === 'many' || prize.quantity_remaining > 50
-      );
-      const limitedPrizes = availablePrizes.filter(prize => 
-        prize.type === 'limited' || (prize.quantity_remaining <= 50 && prize.quantity_remaining > 10)
-      );
-      const rarePrizes = availablePrizes.filter(prize => 
-        prize.type === 'rare' || prize.quantity_remaining <= 10
-      );
-      
-      // Взвешенный выбор: 60% - обильные, 30% - ограниченные, 10% - редкие
-      const random = Math.random();
-      
-      if (random < 0.6 && abundantPrizes.length > 0) {
-        return this.selectRandomPrize(abundantPrizes);
-      } else if (random < 0.9 && limitedPrizes.length > 0) {
-        return this.selectRandomPrize(limitedPrizes);
-      } else if (rarePrizes.length > 0) {
-        return this.selectRandomPrize(rarePrizes);
-      }
+      // Применяем новое распределение ко всем доступным призам
+      return this.selectPrizeByDistribution(availablePrizes, wonPrizeIds, previousResults);
     }
     
     // Fallback - случайный выбор из всех доступных
     return this.selectRandomPrize(availablePrizes);
+  }
+
+  /**
+   * Выбор приза по новому распределению с учетом ограничений
+   * 
+   * @param availablePrizes - Доступные призы
+   * @param wonPrizeIds - Уже выигранные призы в сессии
+   * @param previousResults - Предыдущие результаты
+   * @returns Выбранный приз
+   */
+  private selectPrizeByDistribution(
+    availablePrizes: Prize[],
+    wonPrizeIds: number[],
+    previousResults: any[]
+  ): Prize {
+    // Определяем категории призов
+    const abundantPrizes = availablePrizes.filter(prize => 
+      prize.type === 'many' || prize.quantity_remaining > 1000
+    );
+    const limitedPrizes = availablePrizes.filter(prize => 
+      prize.type === 'limited' || (prize.quantity_remaining >= 100 && prize.quantity_remaining <= 999)
+    );
+    const rarePrizes = availablePrizes.filter(prize => 
+      prize.type === 'rare' || prize.quantity_remaining <= 10
+    );
+    
+    // Призы с ограничениями (количество < 20)
+    const restrictedPrizes = availablePrizes.filter(prize => 
+      prize.quantity_remaining < 20
+    );
+    
+    // Проверяем ограничения на призы с количеством < 20
+    const availableRestricted = restrictedPrizes.filter(prize => 
+      !wonPrizeIds.includes(prize.id)
+    );
+    
+    // Если есть доступные ограниченные призы, исключаем их из обычного распределения
+    const filteredAbundant = abundantPrizes.filter(prize => 
+      !restrictedPrizes.some(rp => rp.id === prize.id)
+    );
+    const filteredLimited = limitedPrizes.filter(prize => 
+      !restrictedPrizes.some(rp => rp.id === prize.id)
+    );
+    const filteredRare = rarePrizes.filter(prize => 
+      !restrictedPrizes.some(rp => rp.id === prize.id)
+    );
+    
+    // Проверяем, был ли предыдущий приз редким
+    const lastPrize = previousResults[previousResults.length - 1];
+    const wasLastPrizeRare = lastPrize && rarePrizes.some(rp => rp.id === lastPrize.prize_id);
+    
+    // Если предыдущий приз был редким, исключаем редкие из текущего выбора
+    const finalRarePrizes = wasLastPrizeRare ? [] : filteredRare;
+    
+    // Взвешенный выбор с учетом количества
+    const random = Math.random();
+    
+    // 80% шанс на обильные призы
+    if (random < 0.8 && filteredAbundant.length > 0) {
+      return this.selectWeightedPrize(filteredAbundant);
+    }
+    // 10% шанс на ограниченные призы
+    else if (random < 0.9 && filteredLimited.length > 0) {
+      return this.selectWeightedPrize(filteredLimited);
+    }
+    // 1% шанс на редкие призы (если предыдущий не был редким)
+    else if (random < 0.91 && finalRarePrizes.length > 0) {
+      return this.selectWeightedPrize(finalRarePrizes);
+    }
+    // Если нет призов в основных категориях, выбираем из доступных ограниченных
+    else if (availableRestricted.length > 0) {
+      return this.selectWeightedPrize(availableRestricted);
+    }
+    // Fallback - случайный выбор из всех доступных
+    else {
+      return this.selectRandomPrize(availablePrizes);
+    }
+  }
+
+  /**
+   * Взвешенный выбор приза на основе количества
+   * Чем больше количество, тем выше вероятность выбора
+   * 
+   * @param prizes - Массив призов для выбора
+   * @returns Выбранный приз
+   */
+  private selectWeightedPrize(prizes: Prize[]): Prize {
+    if (prizes.length === 0) {
+      throw new Error('Нет призов для выбора');
+    }
+    
+    // Если только один приз, возвращаем его
+    if (prizes.length === 1) {
+      return prizes[0];
+    }
+    
+    // Вычисляем веса на основе количества
+    const weights = prizes.map(prize => {
+      // Базовый вес = количество оставшихся призов
+      let weight = prize.quantity_remaining;
+      
+      // Дополнительные модификаторы на основе типа
+      if (prize.type === 'many') {
+        weight *= 1.5; // Увеличиваем вес для обильных призов
+      } else if (prize.type === 'limited') {
+        weight *= 1.0; // Нейтральный вес
+      } else if (prize.type === 'rare') {
+        weight *= 0.1; // Значительно уменьшаем вес для редких
+      }
+      
+      // Дополнительное уменьшение веса для очень редких призов
+      if (prize.quantity_remaining <= 5) {
+        weight *= 0.01; // Очень низкий вес для крайне редких
+      } else if (prize.quantity_remaining <= 10) {
+        weight *= 0.05; // Низкий вес для редких
+      }
+      
+      return Math.max(weight, 0.01); // Минимальный вес
+    });
+    
+    // Вычисляем общий вес
+    const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+    
+    // Генерируем случайное число
+    const random = Math.random() * totalWeight;
+    
+    // Находим приз по весу
+    let currentWeight = 0;
+    for (let i = 0; i < prizes.length; i++) {
+      currentWeight += weights[i];
+      if (random <= currentWeight) {
+        return prizes[i];
+      }
+    }
+    
+    // Fallback - возвращаем последний приз
+    return prizes[prizes.length - 1];
   }
 
   /**

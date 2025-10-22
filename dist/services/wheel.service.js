@@ -261,38 +261,96 @@ let WheelService = WheelService_1 = class WheelService {
     async selectPrize(availablePrizes, previousResults, spinsUsed, tx) {
         const wonPrizeIds = previousResults.map(result => result.prize_id);
         const mandatoryPrizes = await this.getMandatoryPrizes(tx);
-        if (spinsUsed < 5) {
+        const abundantPrizes = availablePrizes.filter(prize => prize.type === 'many' || prize.quantity_remaining > 1000);
+        const limitedPrizes = availablePrizes.filter(prize => prize.type === 'limited' || (prize.quantity_remaining >= 100 && prize.quantity_remaining <= 999));
+        const rarePrizes = availablePrizes.filter(prize => prize.type === 'rare' || prize.quantity_remaining <= 10);
+        const restrictedPrizes = availablePrizes.filter(prize => prize.quantity_remaining < 20);
+        if (spinsUsed < 4) {
             const unclaimedPrizes = availablePrizes.filter(prize => !wonPrizeIds.includes(prize.id));
             if (unclaimedPrizes.length > 0) {
                 const unclaimedMandatory = unclaimedPrizes.filter(prize => mandatoryPrizes.some(mp => mp.prize.id === prize.id));
                 if (unclaimedMandatory.length > 0) {
                     return this.selectRandomPrize(unclaimedMandatory);
                 }
-                return this.selectRandomPrize(unclaimedPrizes);
+                return this.selectPrizeByDistribution(unclaimedPrizes, wonPrizeIds, previousResults);
             }
         }
-        if (spinsUsed >= 5) {
+        if (spinsUsed >= 4) {
             const availableMandatory = availablePrizes.filter(prize => mandatoryPrizes.some(mp => mp.prize.id === prize.id));
             if (availableMandatory.length > 0) {
                 if (Math.random() < 0.7) {
                     return this.selectRandomPrize(availableMandatory);
                 }
             }
-            const abundantPrizes = availablePrizes.filter(prize => prize.type === 'many' || prize.quantity_remaining > 50);
-            const limitedPrizes = availablePrizes.filter(prize => prize.type === 'limited' || (prize.quantity_remaining <= 50 && prize.quantity_remaining > 10));
-            const rarePrizes = availablePrizes.filter(prize => prize.type === 'rare' || prize.quantity_remaining <= 10);
-            const random = Math.random();
-            if (random < 0.6 && abundantPrizes.length > 0) {
-                return this.selectRandomPrize(abundantPrizes);
-            }
-            else if (random < 0.9 && limitedPrizes.length > 0) {
-                return this.selectRandomPrize(limitedPrizes);
-            }
-            else if (rarePrizes.length > 0) {
-                return this.selectRandomPrize(rarePrizes);
-            }
+            return this.selectPrizeByDistribution(availablePrizes, wonPrizeIds, previousResults);
         }
         return this.selectRandomPrize(availablePrizes);
+    }
+    selectPrizeByDistribution(availablePrizes, wonPrizeIds, previousResults) {
+        const abundantPrizes = availablePrizes.filter(prize => prize.type === 'many' || prize.quantity_remaining > 1000);
+        const limitedPrizes = availablePrizes.filter(prize => prize.type === 'limited' || (prize.quantity_remaining >= 100 && prize.quantity_remaining <= 999));
+        const rarePrizes = availablePrizes.filter(prize => prize.type === 'rare' || prize.quantity_remaining <= 10);
+        const restrictedPrizes = availablePrizes.filter(prize => prize.quantity_remaining < 20);
+        const availableRestricted = restrictedPrizes.filter(prize => !wonPrizeIds.includes(prize.id));
+        const filteredAbundant = abundantPrizes.filter(prize => !restrictedPrizes.some(rp => rp.id === prize.id));
+        const filteredLimited = limitedPrizes.filter(prize => !restrictedPrizes.some(rp => rp.id === prize.id));
+        const filteredRare = rarePrizes.filter(prize => !restrictedPrizes.some(rp => rp.id === prize.id));
+        const lastPrize = previousResults[previousResults.length - 1];
+        const wasLastPrizeRare = lastPrize && rarePrizes.some(rp => rp.id === lastPrize.prize_id);
+        const finalRarePrizes = wasLastPrizeRare ? [] : filteredRare;
+        const random = Math.random();
+        if (random < 0.8 && filteredAbundant.length > 0) {
+            return this.selectWeightedPrize(filteredAbundant);
+        }
+        else if (random < 0.9 && filteredLimited.length > 0) {
+            return this.selectWeightedPrize(filteredLimited);
+        }
+        else if (random < 0.91 && finalRarePrizes.length > 0) {
+            return this.selectWeightedPrize(finalRarePrizes);
+        }
+        else if (availableRestricted.length > 0) {
+            return this.selectWeightedPrize(availableRestricted);
+        }
+        else {
+            return this.selectRandomPrize(availablePrizes);
+        }
+    }
+    selectWeightedPrize(prizes) {
+        if (prizes.length === 0) {
+            throw new Error('Нет призов для выбора');
+        }
+        if (prizes.length === 1) {
+            return prizes[0];
+        }
+        const weights = prizes.map(prize => {
+            let weight = prize.quantity_remaining;
+            if (prize.type === 'many') {
+                weight *= 1.5;
+            }
+            else if (prize.type === 'limited') {
+                weight *= 1.0;
+            }
+            else if (prize.type === 'rare') {
+                weight *= 0.1;
+            }
+            if (prize.quantity_remaining <= 5) {
+                weight *= 0.01;
+            }
+            else if (prize.quantity_remaining <= 10) {
+                weight *= 0.05;
+            }
+            return Math.max(weight, 0.01);
+        });
+        const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+        const random = Math.random() * totalWeight;
+        let currentWeight = 0;
+        for (let i = 0; i < prizes.length; i++) {
+            currentWeight += weights[i];
+            if (random <= currentWeight) {
+                return prizes[i];
+            }
+        }
+        return prizes[prizes.length - 1];
     }
     async getMandatoryPrizes(tx) {
         return await this.mandatoryPrizesService.getPriorityMandatoryPrizes();
@@ -480,8 +538,7 @@ let WheelService = WheelService_1 = class WheelService {
                 },
                 group: 'personal',
                 email: email,
-                sendwhen: 'later',
-                'later.time': this.formatDateForSendsay(sendTime)
+                sendwhen: 'now',
             };
             const response = await axios_1.default.post(this.SENDSAY_API_URL, requestData, {
                 headers: {
