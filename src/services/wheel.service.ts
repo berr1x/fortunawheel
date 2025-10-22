@@ -428,7 +428,7 @@ export class WheelService {
         }
         
         // Применяем новое распределение к неповторяющимся призам
-        return this.selectPrizeByDistribution(unclaimedPrizes, wonPrizeIds, previousResults);
+        return this.selectPrizeByDistribution(unclaimedPrizes, wonPrizeIds, previousResults, spinsUsed + 1);
       }
     }
     
@@ -447,7 +447,7 @@ export class WheelService {
       }
       
       // Применяем новое распределение ко всем доступным призам
-      return this.selectPrizeByDistribution(availablePrizes, wonPrizeIds, previousResults);
+      return this.selectPrizeByDistribution(availablePrizes, wonPrizeIds, previousResults, spinsUsed + 1);
     }
     
     // Fallback - случайный выбор из всех доступных
@@ -460,24 +460,26 @@ export class WheelService {
    * @param availablePrizes - Доступные призы
    * @param wonPrizeIds - Уже выигранные призы в сессии
    * @param previousResults - Предыдущие результаты
+   * @param spinNumber - Номер прокрутки (1-based)
    * @returns Выбранный приз
    */
   private selectPrizeByDistribution(
     availablePrizes: Prize[],
     wonPrizeIds: number[],
-    previousResults: any[]
+    previousResults: any[],
+    spinNumber: number
   ): Prize {
     // Определяем категории призов
-    const abundantPrizes = availablePrizes.filter(prize => 
+      const abundantPrizes = availablePrizes.filter(prize => 
       prize.type === 'many' || prize.quantity_remaining > 1000
-    );
-    const limitedPrizes = availablePrizes.filter(prize => 
+      );
+      const limitedPrizes = availablePrizes.filter(prize => 
       prize.type === 'limited' || (prize.quantity_remaining >= 100 && prize.quantity_remaining <= 999)
-    );
-    const rarePrizes = availablePrizes.filter(prize => 
-      prize.type === 'rare' || prize.quantity_remaining <= 10
-    );
-    
+      );
+      const rarePrizes = availablePrizes.filter(prize => 
+        prize.type === 'rare' || prize.quantity_remaining <= 10
+      );
+      
     // Призы с ограничениями (количество < 20)
     const restrictedPrizes = availablePrizes.filter(prize => 
       prize.quantity_remaining < 20
@@ -499,27 +501,40 @@ export class WheelService {
       !restrictedPrizes.some(rp => rp.id === prize.id)
     );
     
-    // Проверяем, был ли предыдущий приз редким
-    const lastPrize = previousResults[previousResults.length - 1];
-    const wasLastPrizeRare = lastPrize && rarePrizes.some(rp => rp.id === lastPrize.prize_id);
-    
-    // Если предыдущий приз был редким, исключаем редкие из текущего выбора
-    const finalRarePrizes = wasLastPrizeRare ? [] : filteredRare;
+    // Применяем ограничения на повторения для каждой категории
+    const abundantWithLimits = this.filterPrizesByRepetitionLimits(
+      filteredAbundant, 
+      previousResults, 
+      spinNumber, 
+      false
+    );
+    const limitedWithLimits = this.filterPrizesByRepetitionLimits(
+      filteredLimited, 
+      previousResults, 
+      spinNumber, 
+      false
+    );
+    const rareWithLimits = this.filterPrizesByRepetitionLimits(
+      filteredRare, 
+      previousResults, 
+      spinNumber, 
+      true
+    );
     
     // Взвешенный выбор с учетом количества
-    const random = Math.random();
-    
+      const random = Math.random();
+      
     // 80% шанс на обильные призы
-    if (random < 0.8 && filteredAbundant.length > 0) {
-      return this.selectWeightedPrize(filteredAbundant);
+    if (random < 0.8 && abundantWithLimits.length > 0) {
+      return this.selectWeightedPrize(abundantWithLimits);
     }
     // 10% шанс на ограниченные призы
-    else if (random < 0.9 && filteredLimited.length > 0) {
-      return this.selectWeightedPrize(filteredLimited);
+    else if (random < 0.9 && limitedWithLimits.length > 0) {
+      return this.selectWeightedPrize(limitedWithLimits);
     }
     // 1% шанс на редкие призы (если предыдущий не был редким)
-    else if (random < 0.91 && finalRarePrizes.length > 0) {
-      return this.selectWeightedPrize(finalRarePrizes);
+    else if (random < 0.91 && rareWithLimits.length > 0) {
+      return this.selectWeightedPrize(rareWithLimits);
     }
     // Если нет призов в основных категориях, выбираем из доступных ограниченных
     else if (availableRestricted.length > 0) {
@@ -529,6 +544,84 @@ export class WheelService {
     else {
       return this.selectRandomPrize(availablePrizes);
     }
+  }
+
+  /**
+   * Определяет максимально допустимое количество повторений для обычных призов
+   * в зависимости от номера прокрутки
+   * 
+   * @param spinNumber - Номер прокрутки (1-based)
+   * @returns Максимальное количество повторений
+   */
+  private getMaxAllowedRepetitions(spinNumber: number): number {
+    if (spinNumber <= 4) {
+      return 0; // 1,2,3,4 прокрутки - без повторений
+    } else if (spinNumber === 5) {
+      return 1; // 5 прокрутка - 0 или 1 повторение
+    } else if (spinNumber === 6) {
+      return 2; // 6 прокрутка - 0, 1 или 2 повторения
+    } else if (spinNumber === 7) {
+      return 3; // 7 прокрутка - 1,2 или 3 повторения
+    } else if (spinNumber === 8) {
+      return 3; // 8 прокрутка - 2 или 3 повторения
+    } else if (spinNumber === 9) {
+      return 4; // 9 прокрутка - 2,3 или 4 повторения
+    } else if (spinNumber === 10) {
+      return 5; // 10 прокрутка - 3, 4 или 5 повторений
+    } else if (spinNumber === 11) {
+      return 6; // 11 прокрутка - 4,5 или 6 повторений
+    } else if (spinNumber === 12) {
+      return 7; // 12 прокрутка - 5,6 или 7 повторений
+    } else {
+      // Для 13+ прокруток - без ограничений на повторения
+      return Infinity;
+    }
+  }
+
+  /**
+   * Подсчитывает количество повторений конкретного приза в сессии
+   * 
+   * @param prizeId - ID приза
+   * @param previousResults - Предыдущие результаты прокруток
+   * @returns Количество повторений
+   */
+  private countPrizeRepetitions(prizeId: number, previousResults: any[]): number {
+    return previousResults.filter(result => result.prize_id === prizeId).length;
+  }
+
+  /**
+   * Фильтрует призы с учетом ограничений на повторения
+   * 
+   * @param prizes - Массив призов для фильтрации
+   * @param previousResults - Предыдущие результаты прокруток
+   * @param spinNumber - Номер прокрутки (1-based)
+   * @param isRare - Являются ли призы редкими
+   * @returns Отфильтрованный массив призов
+   */
+  private filterPrizesByRepetitionLimits(
+    prizes: Prize[],
+    previousResults: any[],
+    spinNumber: number,
+    isRare: boolean = false
+  ): Prize[] {
+    if (isRare) {
+      // Для редких призов - исключаем, если предыдущий был редким
+      const lastPrize = previousResults[previousResults.length - 1];
+      const wasLastPrizeRare = lastPrize && prizes.some(p => p.id === lastPrize.prize_id);
+      
+      if (wasLastPrizeRare) {
+        return []; // Исключаем все редкие призы
+      }
+      return prizes;
+    }
+
+    // Для обычных призов - применяем ограничения на повторения
+    const maxRepetitions = this.getMaxAllowedRepetitions(spinNumber);
+    
+    return prizes.filter(prize => {
+      const repetitions = this.countPrizeRepetitions(prize.id, previousResults);
+      return repetitions <= maxRepetitions;
+    });
   }
 
   /**
