@@ -474,9 +474,6 @@ export class WheelService {
     // Получаем статистику выдачи призов за последний час
     const distributionStats = await this.getPrizeDistributionStats(60, tx);
     
-    // Проверяем cooldown для редких призов
-    const isRareCooldownActive = await this.isRarePrizeCooldownActive(tx);
-    
     // Определяем категории призов
     const abundantPrizes = availablePrizes.filter(prize => 
       prize.type === 'many' || prize.quantity_remaining > 1000
@@ -514,22 +511,19 @@ export class WheelService {
       filteredAbundant, 
       previousResults, 
       spinNumber, 
-      false,
       false
     );
     const limitedWithLimits = this.filterPrizesByRepetitionLimits(
       filteredLimited, 
       previousResults, 
       spinNumber, 
-      false,
       false
     );
     const rareWithLimits = this.filterPrizesByRepetitionLimits(
       filteredRare, 
       previousResults, 
       spinNumber, 
-      true,
-      isRareCooldownActive
+      true
     );
     
     // Взвешенный выбор с учетом количества и статистики
@@ -601,28 +595,21 @@ export class WheelService {
   }
 
   /**
-   * Фильтрует призы с учетом ограничений на повторения и cooldown
+   * Фильтрует призы с учетом ограничений на повторения
    * 
    * @param prizes - Массив призов для фильтрации
    * @param previousResults - Предыдущие результаты прокруток
    * @param spinNumber - Номер прокрутки (1-based)
    * @param isRare - Являются ли призы редкими
-   * @param isCooldownActive - Активен ли cooldown для редких призов
    * @returns Отфильтрованный массив призов
    */
   private filterPrizesByRepetitionLimits(
     prizes: Prize[],
     previousResults: any[],
     spinNumber: number,
-    isRare: boolean = false,
-    isCooldownActive: boolean = false
+    isRare: boolean = false
   ): Prize[] {
     if (isRare) {
-      // Если активен cooldown для редких призов, исключаем их все
-      if (isCooldownActive) {
-        return [];
-      }
-      
       // Для редких призов - строгие ограничения
       const lastPrize = previousResults[previousResults.length - 1];
       const wasLastPrizeRare = lastPrize && prizes.some(p => p.id === lastPrize.prize_id);
@@ -662,55 +649,6 @@ export class WheelService {
       const repetitions = this.countPrizeRepetitions(prize.id, previousResults);
       return repetitions <= maxRepetitions;
     });
-  }
-
-  /**
-   * Проверяет, находится ли система в cooldown для редких призов
-   * 
-   * @param tx - Транзакция БД
-   * @returns true, если система в cooldown для редких призов
-   */
-  private async isRarePrizeCooldownActive(tx: any): Promise<boolean> {
-    // Генерируем случайный cooldown от 5 до 15 минут
-    const cooldownMinutes = Math.floor(Math.random() * 11) + 5; // 5-15 минут
-    const cooldownTime = new Date(Date.now() - cooldownMinutes * 60 * 1000);
-    
-    // Проверяем, был ли выдан редкий приз в течение cooldown периода
-    const recentRarePrize = await tx.spin_results.findFirst({
-      where: {
-        created_at: {
-          gte: cooldownTime,
-        },
-        prize: {
-          OR: [
-            { type: 'rare' },
-            { quantity_remaining: { lte: 10 } }
-          ]
-        }
-      },
-      select: {
-        id: true,
-        created_at: true,
-        prize: {
-          select: {
-            id: true,
-            name: true,
-            type: true,
-            quantity_remaining: true
-          }
-        }
-      },
-      orderBy: {
-        created_at: 'desc'
-      }
-    });
-
-    if (recentRarePrize) {
-      this.logger.log(`🎯 Rare prize cooldown active: ${recentRarePrize.prize.name} was issued ${Math.round((Date.now() - recentRarePrize.created_at.getTime()) / 60000)} minutes ago`);
-      return true;
-    }
-
-    return false;
   }
 
   /**
