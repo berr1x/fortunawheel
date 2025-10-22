@@ -474,6 +474,9 @@ export class WheelService {
     // Получаем статистику выдачи призов за последний час
     const distributionStats = await this.getPrizeDistributionStats(60, tx);
     
+    // Проверяем cooldown для редких призов
+    const isRareCooldownActive = await this.isRarePrizeCooldownActive(tx);
+    
     // Определяем категории призов
     const abundantPrizes = availablePrizes.filter(prize => 
       prize.type === 'many' || prize.quantity_remaining > 1000
@@ -511,34 +514,37 @@ export class WheelService {
       filteredAbundant, 
       previousResults, 
       spinNumber, 
+      false,
       false
     );
     const limitedWithLimits = this.filterPrizesByRepetitionLimits(
       filteredLimited, 
       previousResults, 
       spinNumber, 
+      false,
       false
     );
     const rareWithLimits = this.filterPrizesByRepetitionLimits(
       filteredRare, 
       previousResults, 
       spinNumber, 
-      true
+      true,
+      isRareCooldownActive
     );
     
     // Взвешенный выбор с учетом количества и статистики
     const random = Math.random();
     
-    // 80% шанс на обильные призы
-    if (random < 0.8 && abundantWithLimits.length > 0) {
+    // 95% шанс на обильные призы
+    if (random < 0.95 && abundantWithLimits.length > 0) {
       return await this.selectWeightedPrizeWithStats(abundantWithLimits, distributionStats, tx);
     }
-    // 10% шанс на ограниченные призы
-    else if (random < 0.9 && limitedWithLimits.length > 0) {
+    // 4.9% шанс на ограниченные призы
+    else if (random < 0.999 && limitedWithLimits.length > 0) {
       return await this.selectWeightedPrizeWithStats(limitedWithLimits, distributionStats, tx);
     }
-    // 1% шанс на редкие призы (если предыдущий не был редким)
-    else if (random < 0.91 && rareWithLimits.length > 0) {
+    // 0.1% шанс на редкие призы (если предыдущий не был редким)
+    else if (random < 1.0 && rareWithLimits.length > 0) {
       return await this.selectWeightedPrizeWithStats(rareWithLimits, distributionStats, tx);
     }
     // Если нет призов в основных категориях, выбираем из доступных ограниченных
@@ -595,28 +601,57 @@ export class WheelService {
   }
 
   /**
-   * Фильтрует призы с учетом ограничений на повторения
+   * Фильтрует призы с учетом ограничений на повторения и cooldown
    * 
    * @param prizes - Массив призов для фильтрации
    * @param previousResults - Предыдущие результаты прокруток
    * @param spinNumber - Номер прокрутки (1-based)
    * @param isRare - Являются ли призы редкими
+   * @param isCooldownActive - Активен ли cooldown для редких призов
    * @returns Отфильтрованный массив призов
    */
   private filterPrizesByRepetitionLimits(
     prizes: Prize[],
     previousResults: any[],
     spinNumber: number,
-    isRare: boolean = false
+    isRare: boolean = false,
+    isCooldownActive: boolean = false
   ): Prize[] {
     if (isRare) {
-      // Для редких призов - исключаем, если предыдущий был редким
+      // Если активен cooldown для редких призов, исключаем их все
+      if (isCooldownActive) {
+        return [];
+      }
+      
+      // Для редких призов - строгие ограничения
       const lastPrize = previousResults[previousResults.length - 1];
       const wasLastPrizeRare = lastPrize && prizes.some(p => p.id === lastPrize.prize_id);
       
+      // Исключаем редкие призы, если предыдущий был редким
       if (wasLastPrizeRare) {
-        return []; // Исключаем все редкие призы
+        return [];
       }
+      
+      // Дополнительное ограничение: редкие призы не чаще чем раз в 50 прокруток
+      const rarePrizeCount = previousResults.filter(result => 
+        prizes.some(p => p.id === result.prize_id)
+      ).length;
+      
+      // Если уже было больше 1 редкого приза на каждые 50 прокруток, исключаем
+      const maxRarePer50Spins = Math.floor(spinNumber / 50);
+      if (rarePrizeCount >= maxRarePer50Spins) {
+        return [];
+      }
+      
+      // Дополнительная проверка: если в последних 20 прокрутках был редкий приз, исключаем
+      const recentRareCount = previousResults.slice(-20).filter(result => 
+        prizes.some(p => p.id === result.prize_id)
+      ).length;
+      
+      if (recentRareCount > 0) {
+        return [];
+      }
+      
       return prizes;
     }
 
@@ -627,6 +662,55 @@ export class WheelService {
       const repetitions = this.countPrizeRepetitions(prize.id, previousResults);
       return repetitions <= maxRepetitions;
     });
+  }
+
+  /**
+   * Проверяет, находится ли система в cooldown для редких призов
+   * 
+   * @param tx - Транзакция БД
+   * @returns true, если система в cooldown для редких призов
+   */
+  private async isRarePrizeCooldownActive(tx: any): Promise<boolean> {
+    // Генерируем случайный cooldown от 5 до 15 минут
+    const cooldownMinutes = Math.floor(Math.random() * 11) + 5; // 5-15 минут
+    const cooldownTime = new Date(Date.now() - cooldownMinutes * 60 * 1000);
+    
+    // Проверяем, был ли выдан редкий приз в течение cooldown периода
+    const recentRarePrize = await tx.spin_results.findFirst({
+      where: {
+        created_at: {
+          gte: cooldownTime,
+        },
+        prize: {
+          OR: [
+            { type: 'rare' },
+            { quantity_remaining: { lte: 10 } }
+          ]
+        }
+      },
+      select: {
+        id: true,
+        created_at: true,
+        prize: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            quantity_remaining: true
+          }
+        }
+      },
+      orderBy: {
+        created_at: 'desc'
+      }
+    });
+
+    if (recentRarePrize) {
+      this.logger.log(`🎯 Rare prize cooldown active: ${recentRarePrize.prize.name} was issued ${Math.round((Date.now() - recentRarePrize.created_at.getTime()) / 60000)} minutes ago`);
+      return true;
+    }
+
+    return false;
   }
 
   /**
@@ -685,7 +769,7 @@ export class WheelService {
     // Рассчитываем ожидаемый процент выдачи для данного типа приза
     let expectedPercentage = 0;
     if (prize.type === 'rare' || prize.quantity_remaining <= 10) {
-      expectedPercentage = 0.001; // 0.1% для редких
+      expectedPercentage = 0.0001; // 0.01% для редких (в 10 раз меньше!)
     } else if (prize.type === 'limited' || (prize.quantity_remaining >= 100 && prize.quantity_remaining <= 999)) {
       expectedPercentage = 0.01; // 1% для ограниченных
     } else {
@@ -707,16 +791,16 @@ export class WheelService {
     } else if (prize.type === 'limited') {
       weight *= 1.0; // Нейтральный вес
     } else if (prize.type === 'rare') {
-      weight *= 0.05; // Очень низкий вес для редких
+      weight *= 0.001; // Экстремально низкий вес для редких
     }
     
     // Дополнительное уменьшение веса для очень редких призов
     if (prize.quantity_remaining <= 5) {
-      weight *= 0.005; // Экстремально низкий вес для крайне редких
+      weight *= 0.0001; // Практически нулевой вес для крайне редких
     } else if (prize.quantity_remaining <= 10) {
-      weight *= 0.02; // Очень низкий вес для редких
+      weight *= 0.001; // Экстремально низкий вес для редких
     } else if (prize.quantity_remaining <= 20) {
-      weight *= 0.1; // Низкий вес для ограниченных
+      weight *= 0.01; // Очень низкий вес для ограниченных
     }
     
     // Временной фактор - если приз выдавался недавно, снижаем вес
