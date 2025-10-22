@@ -276,7 +276,7 @@ export class AdminService {
         if (session && spinsCount !== undefined) {
           await this.prisma.spin_sessions.update({
             where: { id: session.id },
-            data: { spins_total: spinsCount, is_active: session.spins_total > session.spins_used ? true : false }
+            data: { spins_total: spinsCount, is_active: true }
 
           });
         }
