@@ -700,8 +700,8 @@ export class WheelService {
         },
         group: 'personal',
         email: email,
-        sendwhen: 'later',
-        'later.time': this.formatDateForSendsay(sendTime)
+        sendwhen: 'now',
+        // 'later.time': this.formatDateForSendsay(sendTime)
       };
 
       const response = await axios.post(this.SENDSAY_API_URL, requestData, {
