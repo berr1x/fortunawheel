@@ -652,14 +652,14 @@ export class WheelService {
       } else if (prize.type === 'limited') {
         weight *= 1.0; // Нейтральный вес
       } else if (prize.type === 'rare') {
-        weight *= 0.1; // Значительно уменьшаем вес для редких
+        weight *= 0.08; // Значительно уменьшаем вес для редких
       }
       
       // Дополнительное уменьшение веса для очень редких призов
       if (prize.quantity_remaining <= 5) {
         weight *= 0.01; // Очень низкий вес для крайне редких
       } else if (prize.quantity_remaining <= 10) {
-        weight *= 0.05; // Низкий вес для редких
+        weight *= 0.04; // Низкий вес для редких
       }
       
       return Math.max(weight, 0.01); // Минимальный вес
