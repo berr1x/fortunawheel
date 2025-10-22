@@ -428,7 +428,7 @@ export class WheelService {
         }
         
         // Применяем новое распределение к неповторяющимся призам
-        return this.selectPrizeByDistribution(unclaimedPrizes, wonPrizeIds, previousResults, spinsUsed + 1);
+        return await this.selectPrizeByDistribution(unclaimedPrizes, wonPrizeIds, previousResults, spinsUsed + 1, tx);
       }
     }
     
@@ -447,7 +447,7 @@ export class WheelService {
       }
       
       // Применяем новое распределение ко всем доступным призам
-      return this.selectPrizeByDistribution(availablePrizes, wonPrizeIds, previousResults, spinsUsed + 1);
+      return await this.selectPrizeByDistribution(availablePrizes, wonPrizeIds, previousResults, spinsUsed + 1, tx);
     }
     
     // Fallback - случайный выбор из всех доступных
@@ -461,25 +461,30 @@ export class WheelService {
    * @param wonPrizeIds - Уже выигранные призы в сессии
    * @param previousResults - Предыдущие результаты
    * @param spinNumber - Номер прокрутки (1-based)
+   * @param tx - Транзакция БД
    * @returns Выбранный приз
    */
-  private selectPrizeByDistribution(
+  private async selectPrizeByDistribution(
     availablePrizes: Prize[],
     wonPrizeIds: number[],
     previousResults: any[],
-    spinNumber: number
-  ): Prize {
+    spinNumber: number,
+    tx: any
+  ): Promise<Prize> {
+    // Получаем статистику выдачи призов за последний час
+    const distributionStats = await this.getPrizeDistributionStats(60, tx);
+    
     // Определяем категории призов
-      const abundantPrizes = availablePrizes.filter(prize => 
+    const abundantPrizes = availablePrizes.filter(prize => 
       prize.type === 'many' || prize.quantity_remaining > 1000
-      );
-      const limitedPrizes = availablePrizes.filter(prize => 
+    );
+    const limitedPrizes = availablePrizes.filter(prize => 
       prize.type === 'limited' || (prize.quantity_remaining >= 100 && prize.quantity_remaining <= 999)
-      );
-      const rarePrizes = availablePrizes.filter(prize => 
-        prize.type === 'rare' || prize.quantity_remaining <= 10
-      );
-      
+    );
+    const rarePrizes = availablePrizes.filter(prize => 
+      prize.type === 'rare' || prize.quantity_remaining <= 10
+    );
+    
     // Призы с ограничениями (количество < 20)
     const restrictedPrizes = availablePrizes.filter(prize => 
       prize.quantity_remaining < 20
@@ -521,24 +526,24 @@ export class WheelService {
       true
     );
     
-    // Взвешенный выбор с учетом количества
-      const random = Math.random();
-      
+    // Взвешенный выбор с учетом количества и статистики
+    const random = Math.random();
+    
     // 80% шанс на обильные призы
     if (random < 0.8 && abundantWithLimits.length > 0) {
-      return this.selectWeightedPrize(abundantWithLimits);
+      return await this.selectWeightedPrizeWithStats(abundantWithLimits, distributionStats, tx);
     }
     // 10% шанс на ограниченные призы
     else if (random < 0.9 && limitedWithLimits.length > 0) {
-      return this.selectWeightedPrize(limitedWithLimits);
+      return await this.selectWeightedPrizeWithStats(limitedWithLimits, distributionStats, tx);
     }
     // 1% шанс на редкие призы (если предыдущий не был редким)
     else if (random < 0.91 && rareWithLimits.length > 0) {
-      return this.selectWeightedPrize(rareWithLimits);
+      return await this.selectWeightedPrizeWithStats(rareWithLimits, distributionStats, tx);
     }
     // Если нет призов в основных категориях, выбираем из доступных ограниченных
     else if (availableRestricted.length > 0) {
-      return this.selectWeightedPrize(availableRestricted);
+      return await this.selectWeightedPrizeWithStats(availableRestricted, distributionStats, tx);
     }
     // Fallback - случайный выбор из всех доступных
     else {
@@ -622,6 +627,152 @@ export class WheelService {
       const repetitions = this.countPrizeRepetitions(prize.id, previousResults);
       return repetitions <= maxRepetitions;
     });
+  }
+
+  /**
+   * Получает статистику выдачи призов за последние N минут
+   * 
+   * @param minutes - Количество минут для анализа
+   * @param tx - Транзакция БД
+   * @returns Статистика выдачи призов
+   */
+  private async getPrizeDistributionStats(minutes: number = 60, tx: any): Promise<Map<number, number>> {
+    const cutoffTime = new Date(Date.now() - minutes * 60 * 1000);
+    
+    const results = await tx.spin_results.findMany({
+      where: {
+        created_at: {
+          gte: cutoffTime,
+        },
+      },
+      select: {
+        prize_id: true,
+      },
+    });
+
+    const stats = new Map<number, number>();
+    results.forEach(result => {
+      const count = stats.get(result.prize_id) || 0;
+      stats.set(result.prize_id, count + 1);
+    });
+
+    return stats;
+  }
+
+  /**
+   * Рассчитывает динамический вес для приза на основе его редкости и статистики выдачи
+   * 
+   * @param prize - Приз для расчета веса
+   * @param distributionStats - Статистика выдачи призов
+   * @param totalUsersEstimate - Примерное количество пользователей за период
+   * @returns Динамический вес приза
+   */
+  private calculateDynamicWeight(
+    prize: Prize, 
+    distributionStats: Map<number, number>,
+    totalUsersEstimate: number = 2000
+  ): number {
+    // Базовый вес = количество оставшихся призов
+    let weight = prize.quantity_remaining;
+    
+    // Получаем количество уже выданных призов за период
+    const issuedCount = distributionStats.get(prize.id) || 0;
+    
+    // Рассчитываем процент уже выданных призов от общего количества
+    const issuedPercentage = prize.total_quantity > 0 ? 
+      (issuedCount / prize.total_quantity) : 0;
+    
+    // Рассчитываем ожидаемый процент выдачи для данного типа приза
+    let expectedPercentage = 0;
+    if (prize.type === 'rare' || prize.quantity_remaining <= 10) {
+      expectedPercentage = 0.001; // 0.1% для редких
+    } else if (prize.type === 'limited' || (prize.quantity_remaining >= 100 && prize.quantity_remaining <= 999)) {
+      expectedPercentage = 0.01; // 1% для ограниченных
+    } else {
+      expectedPercentage = 0.08; // 8% для обильных
+    }
+    
+    // Если приз уже выдавался слишком часто относительно ожидаемого, снижаем вес
+    if (issuedPercentage > expectedPercentage * 2) {
+      weight *= 0.01; // Очень низкий вес
+    } else if (issuedPercentage > expectedPercentage * 1.5) {
+      weight *= 0.1; // Низкий вес
+    } else if (issuedPercentage > expectedPercentage) {
+      weight *= 0.5; // Средний вес
+    }
+    
+    // Дополнительные модификаторы на основе типа
+    if (prize.type === 'many') {
+      weight *= 1.5; // Увеличиваем вес для обильных призов
+    } else if (prize.type === 'limited') {
+      weight *= 1.0; // Нейтральный вес
+    } else if (prize.type === 'rare') {
+      weight *= 0.05; // Очень низкий вес для редких
+    }
+    
+    // Дополнительное уменьшение веса для очень редких призов
+    if (prize.quantity_remaining <= 5) {
+      weight *= 0.005; // Экстремально низкий вес для крайне редких
+    } else if (prize.quantity_remaining <= 10) {
+      weight *= 0.02; // Очень низкий вес для редких
+    } else if (prize.quantity_remaining <= 20) {
+      weight *= 0.1; // Низкий вес для ограниченных
+    }
+    
+    // Временной фактор - если приз выдавался недавно, снижаем вес
+    const recentIssued = distributionStats.get(prize.id) || 0;
+    if (recentIssued > 0) {
+      // Чем больше недавних выдач, тем ниже вес
+      weight *= Math.pow(0.1, recentIssued);
+    }
+    
+    return Math.max(weight, 0.001); // Минимальный вес
+  }
+
+  /**
+   * Взвешенный выбор приза на основе количества и динамических весов
+   * 
+   * @param prizes - Массив призов для выбора
+   * @param distributionStats - Статистика выдачи призов
+   * @param tx - Транзакция БД
+   * @returns Выбранный приз
+   */
+  private async selectWeightedPrizeWithStats(
+    prizes: Prize[], 
+    distributionStats: Map<number, number>,
+    tx: any
+  ): Promise<Prize> {
+    if (prizes.length === 0) {
+      throw new Error('Нет призов для выбора');
+    }
+    
+    // Если только один приз, возвращаем его
+    if (prizes.length === 1) {
+      return prizes[0];
+    }
+    
+    // Вычисляем динамические веса
+    const weights = prizes.map(prize => 
+      this.calculateDynamicWeight(prize, distributionStats)
+    );
+    
+    // Вычисляем общий вес
+    const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+    
+    // Генерируем случайное число
+    const random = Math.random() * totalWeight;
+    
+    // Находим приз по весу
+    let currentWeight = 0;
+    for (let i = 0; i < prizes.length; i++) {
+      currentWeight += weights[i];
+      if (random <= currentWeight) {
+        return prizes[i];
+      }
+    }
+    
+    // Fallback - возвращаем последний приз
+    return prizes[prizes.length - 1];
   }
 
   /**
