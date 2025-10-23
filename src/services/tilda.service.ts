@@ -97,19 +97,22 @@ export class TildaService {
   async processPurchase(webhookData: any) {
     try {
       // Валидация входящих данных
-      const { Email, payment } = webhookData;
+      const { Name, Email, Phone, payment } = webhookData;
 
-      if (!Email || !payment || !payment.amount || !payment.orderid) {
+      if (!Email || !payment || !payment.amount || !payment.orderid || !Name) {
         return {
           success: false,
           message: 'Invalid webhook data',
         };
       }
 
-      // Рассчитываем количество прокруток (каждые 3000 рублей = 1 прокрутка)
+      // Извлекаем список продуктов (только названия)
+      const products = payment.products ? payment.products.map((product: any) => product.name) : [];
+
+      // Рассчитываем количество прокруток (каждые 50 рублей = 1 прокрутка)
       const spinsEarned = this.calculateSpins(Number(payment.amount));
 
-      this.logger.log(`Processing purchase: email=${Email}, amount=${payment.amount}, spins=${spinsEarned}`);
+      this.logger.log(`Processing purchase: email=${Email}, phone=${Phone}, amount=${payment.amount}, spins=${spinsEarned}, products=${JSON.stringify(products)}`);
 
       return await this.prisma.$transaction(async (tx) => {
         // 1. Создать или найти пользователя по email
@@ -121,6 +124,9 @@ export class TildaService {
           amount: Number(payment.amount),
           spins_earned: spinsEarned,
           customer_email: Email,
+          phone: Phone,
+          products: products,
+          name: Name
         });
 
         // 3. Создать сессию прокруток только если есть прокрутки
@@ -166,10 +172,15 @@ export class TildaService {
       throw new BadRequestException('Webhook data is required');
     }
 
-    const { Email, payment } = data;
+    const { Email, Phone, payment } = data;
 
     if (!Email || typeof Email !== 'string') {
       throw new BadRequestException('Valid email is required');
+    }
+
+    // Phone не обязателен, но если есть - должен быть строкой
+    if (Phone && typeof Phone !== 'string') {
+      throw new BadRequestException('Phone must be a string if provided');
     }
 
     if (!payment || typeof Number(payment.amount) !== 'number' || Number(payment.amount) <= 0) {
@@ -180,18 +191,23 @@ export class TildaService {
       throw new BadRequestException('Valid order_id is required');
     }
 
-    return { Email: Email, payment: payment };
+    // Проверяем products, если они есть
+    if (payment.products && !Array.isArray(payment.products)) {
+      throw new BadRequestException('Products must be an array if provided');
+    }
+
+    return { Email: Email, Phone: Phone, payment: payment };
   }
 
   /**
    * Расчет количества прокруток на основе суммы покупки
-   * Каждые 3000 рублей = 1 прокрутка
+   * Каждые 50 рублей = 1 прокрутка
    * 
    * @param amount - Сумма покупки в рублях
    * @returns Количество прокруток
    */
   private calculateSpins(amount: number): number {
-    return Math.floor(amount / 50); // 3000
+    return Math.floor(amount / 50); // 50 рублей за прокрутку
   }
 
   /**
@@ -207,8 +223,11 @@ export class TildaService {
     });
 
     if (!user) {
+      // Создаем нового пользователя
       user = await tx.users.create({
-        data: { email },
+        data: { 
+          email
+        },
       });
       this.logger.log(`Created new user: ${email}`);
     }
@@ -232,6 +251,9 @@ export class TildaService {
         amount: orderData.amount,
         spins_earned: orderData.spins_earned,
         customer_email: orderData.customer_email,
+        phone: orderData.phone,
+        products: orderData.products,
+        name: orderData.name,
         data: orderData, // Сохраняем полные данные заказа
       },
     });

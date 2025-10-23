@@ -206,6 +206,7 @@ export declare class AdminController {
         totalSpins: number;
         spinsRemaining: number;
         wonPrizes: string;
+        products: string | number | true | import("generated/prisma/runtime/library").JsonObject;
         createdAt: Date;
     }[]>;
     exportSpinsToExcel(res: Response): Promise<void>;

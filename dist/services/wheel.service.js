@@ -193,7 +193,7 @@ let WheelService = WheelService_1 = class WheelService {
             if (availablePrizes.length === 0) {
                 throw new common_1.BadRequestException('Нет доступных призов');
             }
-            const selectedPrize = await this.selectPrize(availablePrizes, session.results, session.spins_used, tx);
+            const selectedPrize = await this.selectPrize(availablePrizes, session.results, session.spins_used, session.spins_total, tx);
             if (!selectedPrize) {
                 throw new common_1.BadRequestException('Не удалось выбрать приз');
             }
@@ -258,8 +258,35 @@ let WheelService = WheelService_1 = class WheelService {
             };
         });
     }
-    async selectPrize(availablePrizes, previousResults, spinsUsed, tx) {
+    checkGuaranteedPrize(spinsUsed, spinsTotal, previousResults, availablePrizes) {
+        if (spinsUsed < 5) {
+            return null;
+        }
+        const guaranteedPrizes = availablePrizes.filter(prize => prize.type === 'guaranteed');
+        if (guaranteedPrizes.length === 0) {
+            return null;
+        }
+        const wonGuaranteedPrizeIds = previousResults
+            .filter(result => guaranteedPrizes.some(gp => gp.id === result.prize_id))
+            .map(result => result.prize_id);
+        if (wonGuaranteedPrizeIds.length > 0) {
+            return null;
+        }
+        const remainingSpins = spinsTotal - spinsUsed;
+        if (remainingSpins === 1) {
+            return guaranteedPrizes[0];
+        }
+        if (remainingSpins === 2) {
+            return guaranteedPrizes[0];
+        }
+        return null;
+    }
+    async selectPrize(availablePrizes, previousResults, spinsUsed, spinsTotal, tx) {
         const wonPrizeIds = previousResults.map(result => result.prize_id);
+        const guaranteedPrize = this.checkGuaranteedPrize(spinsUsed, spinsTotal, previousResults, availablePrizes);
+        if (guaranteedPrize) {
+            return guaranteedPrize;
+        }
         const mandatoryPrizes = await this.getMandatoryPrizes(tx);
         const abundantPrizes = availablePrizes.filter(prize => prize.type === 'many' || prize.quantity_remaining > 1000);
         const limitedPrizes = availablePrizes.filter(prize => prize.type === 'limited' || (prize.quantity_remaining >= 100 && prize.quantity_remaining <= 999));
@@ -272,7 +299,7 @@ let WheelService = WheelService_1 = class WheelService {
                 if (unclaimedMandatory.length > 0) {
                     return this.selectRandomPrize(unclaimedMandatory);
                 }
-                return this.selectPrizeByDistribution(unclaimedPrizes, wonPrizeIds, previousResults);
+                return await this.selectPrizeByDistribution(unclaimedPrizes, wonPrizeIds, previousResults, spinsUsed + 1, tx);
             }
         }
         if (spinsUsed >= 4) {
@@ -282,11 +309,12 @@ let WheelService = WheelService_1 = class WheelService {
                     return this.selectRandomPrize(availableMandatory);
                 }
             }
-            return this.selectPrizeByDistribution(availablePrizes, wonPrizeIds, previousResults);
+            return await this.selectPrizeByDistribution(availablePrizes, wonPrizeIds, previousResults, spinsUsed + 1, tx);
         }
         return this.selectRandomPrize(availablePrizes);
     }
-    selectPrizeByDistribution(availablePrizes, wonPrizeIds, previousResults) {
+    async selectPrizeByDistribution(availablePrizes, wonPrizeIds, previousResults, spinNumber, tx) {
+        const distributionStats = await this.getPrizeDistributionStats(60, tx);
         const abundantPrizes = availablePrizes.filter(prize => prize.type === 'many' || prize.quantity_remaining > 1000);
         const limitedPrizes = availablePrizes.filter(prize => prize.type === 'limited' || (prize.quantity_remaining >= 100 && prize.quantity_remaining <= 999));
         const rarePrizes = availablePrizes.filter(prize => prize.type === 'rare' || prize.quantity_remaining <= 10);
@@ -295,25 +323,146 @@ let WheelService = WheelService_1 = class WheelService {
         const filteredAbundant = abundantPrizes.filter(prize => !restrictedPrizes.some(rp => rp.id === prize.id));
         const filteredLimited = limitedPrizes.filter(prize => !restrictedPrizes.some(rp => rp.id === prize.id));
         const filteredRare = rarePrizes.filter(prize => !restrictedPrizes.some(rp => rp.id === prize.id));
-        const lastPrize = previousResults[previousResults.length - 1];
-        const wasLastPrizeRare = lastPrize && rarePrizes.some(rp => rp.id === lastPrize.prize_id);
-        const finalRarePrizes = wasLastPrizeRare ? [] : filteredRare;
+        const abundantWithLimits = this.filterPrizesByRepetitionLimits(filteredAbundant, previousResults, spinNumber, false);
+        const limitedWithLimits = this.filterPrizesByRepetitionLimits(filteredLimited, previousResults, spinNumber, false);
+        const rareWithLimits = this.filterPrizesByRepetitionLimits(filteredRare, previousResults, spinNumber, true);
         const random = Math.random();
-        if (random < 0.8 && filteredAbundant.length > 0) {
-            return this.selectWeightedPrize(filteredAbundant);
+        if (random < 0.95 && abundantWithLimits.length > 0) {
+            return await this.selectWeightedPrizeWithStats(abundantWithLimits, distributionStats, tx);
         }
-        else if (random < 0.9 && filteredLimited.length > 0) {
-            return this.selectWeightedPrize(filteredLimited);
+        else if (random < 0.999 && limitedWithLimits.length > 0) {
+            return await this.selectWeightedPrizeWithStats(limitedWithLimits, distributionStats, tx);
         }
-        else if (random < 0.91 && finalRarePrizes.length > 0) {
-            return this.selectWeightedPrize(finalRarePrizes);
+        else if (random < 1.0 && rareWithLimits.length > 0) {
+            return await this.selectWeightedPrizeWithStats(rareWithLimits, distributionStats, tx);
         }
         else if (availableRestricted.length > 0) {
-            return this.selectWeightedPrize(availableRestricted);
+            return await this.selectWeightedPrizeWithStats(availableRestricted, distributionStats, tx);
         }
         else {
             return this.selectRandomPrize(availablePrizes);
         }
+    }
+    getMaxAllowedRepetitions(spinNumber) {
+        if (spinNumber <= 9) {
+            return 2;
+        }
+        else {
+            return 3;
+        }
+    }
+    countPrizeRepetitions(prizeId, previousResults) {
+        return previousResults.filter(result => result.prize_id === prizeId).length;
+    }
+    filterPrizesByRepetitionLimits(prizes, previousResults, spinNumber, isRare = false) {
+        if (isRare) {
+            const lastPrize = previousResults[previousResults.length - 1];
+            const wasLastPrizeRare = lastPrize && prizes.some(p => p.id === lastPrize.prize_id);
+            if (wasLastPrizeRare) {
+                return [];
+            }
+            const rarePrizeCount = previousResults.filter(result => prizes.some(p => p.id === result.prize_id)).length;
+            const maxRarePer50Spins = Math.floor(spinNumber / 50);
+            if (rarePrizeCount >= maxRarePer50Spins) {
+                return [];
+            }
+            const recentRareCount = previousResults.slice(-20).filter(result => prizes.some(p => p.id === result.prize_id)).length;
+            if (recentRareCount > 0) {
+                return [];
+            }
+            return prizes;
+        }
+        const maxRepetitions = this.getMaxAllowedRepetitions(spinNumber);
+        return prizes.filter(prize => {
+            const repetitions = this.countPrizeRepetitions(prize.id, previousResults);
+            return repetitions <= maxRepetitions;
+        });
+    }
+    async getPrizeDistributionStats(minutes = 60, tx) {
+        const cutoffTime = new Date(Date.now() - minutes * 60 * 1000);
+        const results = await tx.spin_results.findMany({
+            where: {
+                created_at: {
+                    gte: cutoffTime,
+                },
+            },
+            select: {
+                prize_id: true,
+            },
+        });
+        const stats = new Map();
+        results.forEach(result => {
+            const count = stats.get(result.prize_id) || 0;
+            stats.set(result.prize_id, count + 1);
+        });
+        return stats;
+    }
+    calculateDynamicWeight(prize, distributionStats, totalUsersEstimate = 2000) {
+        let weight = prize.quantity_remaining;
+        const issuedCount = distributionStats.get(prize.id) || 0;
+        const issuedPercentage = prize.total_quantity > 0 ?
+            (issuedCount / prize.total_quantity) : 0;
+        let expectedPercentage = 0;
+        if (prize.type === 'rare' || prize.quantity_remaining <= 10) {
+            expectedPercentage = 0.0001;
+        }
+        else if (prize.type === 'limited' || (prize.quantity_remaining >= 100 && prize.quantity_remaining <= 999)) {
+            expectedPercentage = 0.01;
+        }
+        else {
+            expectedPercentage = 0.08;
+        }
+        if (issuedPercentage > expectedPercentage * 2) {
+            weight *= 0.01;
+        }
+        else if (issuedPercentage > expectedPercentage * 1.5) {
+            weight *= 0.1;
+        }
+        else if (issuedPercentage > expectedPercentage) {
+            weight *= 0.5;
+        }
+        if (prize.type === 'many') {
+            weight *= 1.5;
+        }
+        else if (prize.type === 'limited') {
+            weight *= 1.0;
+        }
+        else if (prize.type === 'rare') {
+            weight *= 0.001;
+        }
+        if (prize.quantity_remaining <= 5) {
+            weight *= 0.0001;
+        }
+        else if (prize.quantity_remaining <= 10) {
+            weight *= 0.001;
+        }
+        else if (prize.quantity_remaining <= 20) {
+            weight *= 0.01;
+        }
+        const recentIssued = distributionStats.get(prize.id) || 0;
+        if (recentIssued > 0) {
+            weight *= Math.pow(0.1, recentIssued);
+        }
+        return Math.max(weight, 0.001);
+    }
+    async selectWeightedPrizeWithStats(prizes, distributionStats, tx) {
+        if (prizes.length === 0) {
+            throw new Error('Нет призов для выбора');
+        }
+        if (prizes.length === 1) {
+            return prizes[0];
+        }
+        const weights = prizes.map(prize => this.calculateDynamicWeight(prize, distributionStats));
+        const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+        const random = Math.random() * totalWeight;
+        let currentWeight = 0;
+        for (let i = 0; i < prizes.length; i++) {
+            currentWeight += weights[i];
+            if (random <= currentWeight) {
+                return prizes[i];
+            }
+        }
+        return prizes[prizes.length - 1];
     }
     selectWeightedPrize(prizes) {
         if (prizes.length === 0) {
@@ -331,13 +480,13 @@ let WheelService = WheelService_1 = class WheelService {
                 weight *= 1.0;
             }
             else if (prize.type === 'rare') {
-                weight *= 0.1;
+                weight *= 0.08;
             }
             if (prize.quantity_remaining <= 5) {
                 weight *= 0.01;
             }
             else if (prize.quantity_remaining <= 10) {
-                weight *= 0.05;
+                weight *= 0.04;
             }
             return Math.max(weight, 0.01);
         });
@@ -364,11 +513,6 @@ let WheelService = WheelService_1 = class WheelService {
     }
     async getAvailablePrizes() {
         const prizes = await this.prisma.prizes.findMany({
-            where: {
-                quantity_remaining: {
-                    gt: 0,
-                },
-            },
             orderBy: {
                 number: 'asc',
             },

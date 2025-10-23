@@ -36,6 +36,9 @@ model purchases {
   customer_email String?
   data           Json?
   created_at     DateTime      @default(now()) @db.Timestamptz(6)
+  phone          String?
+  products       Json?
+  name           String?
 
   user          users?         @relation(fields: [user_id], references: [id])
   spin_sessions spin_sessions[]

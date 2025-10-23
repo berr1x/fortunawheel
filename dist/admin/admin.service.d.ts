@@ -38,6 +38,7 @@ export declare class AdminService {
     }>;
     createUser(data: {
         email: string;
+        phone?: string;
         purchaseAmount?: number;
         spinsCount?: number;
     }): Promise<{
@@ -201,6 +202,7 @@ export declare class AdminService {
         totalSpins: number;
         spinsRemaining: number;
         wonPrizes: string;
+        products: string | number | true | import("generated/prisma/runtime/library").JsonObject;
         createdAt: Date;
     }[]>;
     exportPurchasesToExcel(): Promise<any>;

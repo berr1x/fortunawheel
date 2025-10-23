@@ -64,8 +64,15 @@ export declare class WheelService {
         }[];
     }>;
     spinWheel(sessionId: string): Promise<SpinResult>;
+    private checkGuaranteedPrize;
     private selectPrize;
     private selectPrizeByDistribution;
+    private getMaxAllowedRepetitions;
+    private countPrizeRepetitions;
+    private filterPrizesByRepetitionLimits;
+    private getPrizeDistributionStats;
+    private calculateDynamicWeight;
+    private selectWeightedPrizeWithStats;
     private selectWeightedPrize;
     private getMandatoryPrizes;
     private selectRandomPrize;

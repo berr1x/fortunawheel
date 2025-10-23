@@ -97,15 +97,16 @@ let TildaService = TildaService_1 = class TildaService {
     }
     async processPurchase(webhookData) {
         try {
-            const { Email, payment } = webhookData;
-            if (!Email || !payment || !payment.amount || !payment.orderid) {
+            const { Name, Email, Phone, payment } = webhookData;
+            if (!Email || !payment || !payment.amount || !payment.orderid || !Name) {
                 return {
                     success: false,
                     message: 'Invalid webhook data',
                 };
             }
+            const products = payment.products ? payment.products.map((product) => product.name) : [];
             const spinsEarned = this.calculateSpins(Number(payment.amount));
-            this.logger.log(`Processing purchase: email=${Email}, amount=${payment.amount}, spins=${spinsEarned}`);
+            this.logger.log(`Processing purchase: email=${Email}, phone=${Phone}, amount=${payment.amount}, spins=${spinsEarned}, products=${JSON.stringify(products)}`);
             return await this.prisma.$transaction(async (tx) => {
                 const user = await this.findOrCreateUser(tx, Email);
                 const purchase = await this.createPurchase(tx, user.id, {
@@ -113,6 +114,9 @@ let TildaService = TildaService_1 = class TildaService {
                     amount: Number(payment.amount),
                     spins_earned: spinsEarned,
                     customer_email: Email,
+                    phone: Phone,
+                    products: products,
+                    name: Name
                 });
                 let session = null;
                 if (spinsEarned > 0) {
@@ -147,9 +151,12 @@ let TildaService = TildaService_1 = class TildaService {
         if (!data) {
             throw new common_1.BadRequestException('Webhook data is required');
         }
-        const { Email, payment } = data;
+        const { Email, Phone, payment } = data;
         if (!Email || typeof Email !== 'string') {
             throw new common_1.BadRequestException('Valid email is required');
+        }
+        if (Phone && typeof Phone !== 'string') {
+            throw new common_1.BadRequestException('Phone must be a string if provided');
         }
         if (!payment || typeof Number(payment.amount) !== 'number' || Number(payment.amount) <= 0) {
             throw new common_1.BadRequestException('Valid amount is required');
@@ -157,7 +164,10 @@ let TildaService = TildaService_1 = class TildaService {
         if (!payment.orderid || typeof payment.orderid !== 'string') {
             throw new common_1.BadRequestException('Valid order_id is required');
         }
-        return { Email: Email, payment: payment };
+        if (payment.products && !Array.isArray(payment.products)) {
+            throw new common_1.BadRequestException('Products must be an array if provided');
+        }
+        return { Email: Email, Phone: Phone, payment: payment };
     }
     calculateSpins(amount) {
         return Math.floor(amount / 50);
@@ -168,7 +178,9 @@ let TildaService = TildaService_1 = class TildaService {
         });
         if (!user) {
             user = await tx.users.create({
-                data: { email },
+                data: {
+                    email
+                },
             });
             this.logger.log(`Created new user: ${email}`);
         }
@@ -182,6 +194,9 @@ let TildaService = TildaService_1 = class TildaService {
                 amount: orderData.amount,
                 spins_earned: orderData.spins_earned,
                 customer_email: orderData.customer_email,
+                phone: orderData.phone,
+                products: orderData.products,
+                name: orderData.name,
                 data: orderData,
             },
         });

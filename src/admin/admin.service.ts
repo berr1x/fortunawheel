@@ -168,6 +168,7 @@ export class AdminService {
    */
   async createUser(data: {
     email: string;
+    phone?: string;
     purchaseAmount?: number;
     spinsCount?: number;
   }) {
@@ -184,7 +185,9 @@ export class AdminService {
 
     // Создаем пользователя
     const user = await this.prisma.users.create({
-      data: { email }
+      data: { 
+        email
+      }
     });
 
     // Если указана сумма покупки или количество прокруток, создаем покупку
@@ -194,7 +197,10 @@ export class AdminService {
           user_id: user.id,
           amount: purchaseAmount,
           spins_earned: spinsCount,
-          customer_email: email
+          customer_email: email,
+          name: "Не указано",
+          phone: "Не указано",
+          products: ["Покупка создана вручную."]
         }
       });
 
@@ -518,10 +524,10 @@ export class AdminService {
     });
 
     return purchases.map(purchase => ({
-      name: 'Не указано', // Заглушка, пока нет поля в базе
-      phone: 'Не указан', // Заглушка, пока нет поля в базе
-      email: purchase.user.email,
-      product: 'Прокрутки колеса фортуны', // Заглушка, пока нет поля в базе
+      name: purchase.name || 'Не указано',
+      phone: purchase.phone || 'Не указан', 
+      email: purchase.user?.email || purchase.customer_email || 'Не указан',
+      product: Array.isArray(purchase.products) ? purchase.products.join(', ') : 'Не указано',
       amount: purchase.amount,
       spinsEarned: purchase.spins_earned,
       createdAt: purchase.created_at
@@ -537,7 +543,10 @@ export class AdminService {
         purchases: {
           select: {
             amount: true,
-            spins_earned: true
+            spins_earned: true,
+            name: true,
+            phone: true,
+            products: true
           }
         },
         spin_sessions: {
@@ -565,6 +574,14 @@ export class AdminService {
       const totalSpinsUsed = user.spin_sessions.reduce((sum, s) => sum + s.spins_used, 0);
       const spinsRemaining = totalSpinsEarned - totalSpinsUsed;
 
+      // Берем данные из последней покупки
+      const lastPurchase = user.purchases[0];
+      const name = lastPurchase?.name || 'Не указано';
+      const phone = lastPurchase?.phone || 'Не указан';
+      const products = lastPurchase?.products ? 
+        (Array.isArray(lastPurchase.products) ? lastPurchase.products.join(', ') : lastPurchase.products) : 
+        'Не указано';
+
       // Группируем выигранные призы
       const wonPrizes = user.spin_results.reduce((acc, result) => {
         const prizeName = result.prize.name;
@@ -581,13 +598,14 @@ export class AdminService {
         .join(', ');
 
       return {
-        name: 'Не указано', // Заглушка, пока нет поля в базе
-        phone: 'Не указан', // Заглушка, пока нет поля в базе
+        name,
+        phone,
         email: user.email,
         purchaseAmount: totalPurchaseAmount,
         totalSpins: totalSpinsEarned,
         spinsRemaining: spinsRemaining,
         wonPrizes: prizesString || 'Нет выигранных призов',
+        products: products,
         createdAt: user.created_at
       };
     });
