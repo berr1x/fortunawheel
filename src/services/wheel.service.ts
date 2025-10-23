@@ -282,6 +282,7 @@ export class WheelService {
         availablePrizes,
         session.results,
         session.spins_used,
+        session.spins_total,
         tx,
       );
 
@@ -369,17 +370,75 @@ export class WheelService {
   }
 
   /**
+   * Проверяет, нужно ли выдать гарантированный приз
+   * 
+   * @param spinsUsed - Количество использованных прокруток
+   * @param spinsTotal - Общее количество прокруток в сессии
+   * @param previousResults - Предыдущие результаты прокруток
+   * @param availablePrizes - Доступные призы
+   * @returns Гарантированный приз или null
+   */
+  private checkGuaranteedPrize(
+    spinsUsed: number,
+    spinsTotal: number,
+    previousResults: any[],
+    availablePrizes: Prize[]
+  ): Prize | null {
+    // Гарантированный приз выдается после 5 прокруток
+    if (spinsUsed < 5) {
+      return null;
+    }
+
+    // Находим гарантированные призы (тип 'guaranteed')
+    const guaranteedPrizes = availablePrizes.filter(prize => 
+      prize.type === 'guaranteed'
+    );
+
+    if (guaranteedPrizes.length === 0) {
+      return null;
+    }
+
+    // Проверяем, был ли уже выдан гарантированный приз в этой сессии
+    const wonGuaranteedPrizeIds = previousResults
+      .filter(result => guaranteedPrizes.some(gp => gp.id === result.prize_id))
+      .map(result => result.prize_id);
+
+    // Если гарантированный приз уже был выдан, не выдаем повторно
+    if (wonGuaranteedPrizeIds.length > 0) {
+      return null;
+    }
+
+    // Определяем, когда выдать гарантированный приз
+    const remainingSpins = spinsTotal - spinsUsed;
+    
+    // Если осталась только 1 прокрутка - выдаем сейчас
+    if (remainingSpins === 1) {
+      return guaranteedPrizes[0]; // Берем первый доступный гарантированный приз
+    }
+    
+    // Если осталось больше 1 прокрутки - выдаем перед предпоследней прокруткой
+    if (remainingSpins === 2) {
+      return guaranteedPrizes[0];
+    }
+
+    // Если осталось больше 2 прокруток - не выдаем пока
+    return null;
+  }
+
+  /**
    * Выбор приза по новому алгоритму вероятностей
    * Реализует логику:
    * - Первые 4 прокрутки: неповторяющиеся подарки
    * - 5+ прокруток: могут повторяться
-   * - Распределение: 80% обильные, 10% ограниченные, 1% редкие
+   * - Распределение: 95% обильные, 4.9% ограниченные, 0.1% редкие
    * - Ограничения на призы с количеством < 20
    * - Предотвращение повторных редких призов
+   * - Гарантированные призы после 5 прокруток
    * 
    * @param availablePrizes - Доступные призы
    * @param previousResults - Предыдущие результаты прокруток
    * @param spinsUsed - Количество использованных прокруток
+   * @param spinsTotal - Общее количество прокруток в сессии
    * @param tx - Транзакция БД
    * @returns Выбранный приз
    */
@@ -387,10 +446,17 @@ export class WheelService {
     availablePrizes: Prize[],
     previousResults: any[],
     spinsUsed: number,
+    spinsTotal: number,
     tx: any,
   ): Promise<Prize | null> {
     // Получаем уже выданные призы в этой сессии
     const wonPrizeIds = previousResults.map(result => result.prize_id);
+    
+    // Проверяем гарантированный приз (приоритет №1)
+    const guaranteedPrize = this.checkGuaranteedPrize(spinsUsed, spinsTotal, previousResults, availablePrizes);
+    if (guaranteedPrize) {
+      return guaranteedPrize;
+    }
     
     // Получаем обязательные подарки за последние 24 часа
     const mandatoryPrizes = await this.getMandatoryPrizes(tx);
@@ -559,27 +625,10 @@ export class WheelService {
    * @returns Максимальное количество повторений
    */
   private getMaxAllowedRepetitions(spinNumber: number): number {
-    if (spinNumber <= 4) {
-      return 0; // 1,2,3,4 прокрутки - без повторений
-    } else if (spinNumber === 5) {
-      return 1; // 5 прокрутка - 0 или 1 повторение
-    } else if (spinNumber === 6) {
-      return 2; // 6 прокрутка - 0, 1 или 2 повторения
-    } else if (spinNumber === 7) {
-      return 3; // 7 прокрутка - 1,2 или 3 повторения
-    } else if (spinNumber === 8) {
-      return 3; // 8 прокрутка - 2 или 3 повторения
-    } else if (spinNumber === 9) {
-      return 4; // 9 прокрутка - 2,3 или 4 повторения
-    } else if (spinNumber === 10) {
-      return 5; // 10 прокрутка - 3, 4 или 5 повторений
-    } else if (spinNumber === 11) {
-      return 6; // 11 прокрутка - 4,5 или 6 повторений
-    } else if (spinNumber === 12) {
-      return 7; // 12 прокрутка - 5,6 или 7 повторений
+    if (spinNumber <= 9) {
+      return 2; // До 9 прокруток включительно - максимум 2 одинаковых приза
     } else {
-      // Для 13+ прокруток - без ограничений на повторения
-      return Infinity;
+      return 3; // С 10 прокрутки и далее - максимум 3 одинаковых приза
     }
   }
 
