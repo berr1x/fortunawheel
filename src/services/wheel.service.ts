@@ -890,11 +890,6 @@ export class WheelService {
    */
   async getAvailablePrizes(): Promise<Prize[]> {
     const prizes = await this.prisma.prizes.findMany({
-      where: {
-        quantity_remaining: {
-          gt: 0,
-        },
-      },
       orderBy: {
         number: 'asc',
       },
