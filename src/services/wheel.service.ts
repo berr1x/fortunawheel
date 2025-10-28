@@ -434,6 +434,7 @@ export class WheelService {
    * - Ограничения на призы с количеством < 20
    * - Предотвращение повторных редких призов
    * - Гарантированные призы после 5 прокруток
+   * - Overchance призы - всегда выпадают первыми
    * 
    * @param availablePrizes - Доступные призы
    * @param previousResults - Предыдущие результаты прокруток
@@ -456,6 +457,12 @@ export class WheelService {
     const guaranteedPrize = this.checkGuaranteedPrize(spinsUsed, spinsTotal, previousResults, availablePrizes);
     if (guaranteedPrize) {
       return guaranteedPrize;
+    }
+    
+    // Проверяем overchance призы (приоритет №2) - выпадают первыми
+    const overchancePrizes = availablePrizes.filter(prize => prize.type === 'overchance');
+    if (overchancePrizes.length > 0) {
+      return this.selectRandomPrize(overchancePrizes);
     }
     
     // Получаем обязательные подарки за последние 24 часа
@@ -1143,7 +1150,7 @@ export class WheelService {
             html: this.createPrizeEmailHTML(prizeName, prizeImage)
           },
           subject: 'Поздравляем! Вы выиграли приз!',
-          'from.email': 'mail@cake-school.com',
+          'from.email': 'mail@info.cake-school.com',
           'from.name': 'Колесо фортуны'
         },
         group: 'personal',
