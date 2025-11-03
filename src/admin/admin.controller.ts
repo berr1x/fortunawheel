@@ -325,8 +325,8 @@ export class AdminController {
       ]
     }
   })
-  async getPurchasesData() {
-    return await this.adminService.getPurchasesData();
+  async getPurchasesData(@Query('search') search?: string) {
+    return await this.adminService.getPurchasesData(search);
   }
 
   @Get('export/purchases/excel')
@@ -388,8 +388,8 @@ export class AdminController {
       ]
     }
   })
-  async getSpinsData() {
-    return await this.adminService.getSpinsData();
+  async getSpinsData(@Query('search') search?: string) {
+    return await this.adminService.getSpinsData(search);
   }
 
   @Get('export/spins/excel')

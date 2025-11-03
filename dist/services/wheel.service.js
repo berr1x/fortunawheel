@@ -287,6 +287,10 @@ let WheelService = WheelService_1 = class WheelService {
         if (guaranteedPrize) {
             return guaranteedPrize;
         }
+        const overchancePrizes = availablePrizes.filter(prize => prize.type === 'overchance');
+        if (overchancePrizes.length > 0) {
+            return this.selectRandomPrize(overchancePrizes);
+        }
         const mandatoryPrizes = await this.getMandatoryPrizes(tx);
         const abundantPrizes = availablePrizes.filter(prize => prize.type === 'many' || prize.quantity_remaining > 1000);
         const limitedPrizes = availablePrizes.filter(prize => prize.type === 'limited' || (prize.quantity_remaining >= 100 && prize.quantity_remaining <= 999));
@@ -677,7 +681,7 @@ let WheelService = WheelService_1 = class WheelService {
                         html: this.createPrizeEmailHTML(prizeName, prizeImage)
                     },
                     subject: 'Поздравляем! Вы выиграли приз!',
-                    'from.email': 'mail@cake-school.com',
+                    'from.email': 'mail@info.cake-school.com',
                     'from.name': 'Колесо фортуны'
                 },
                 group: 'personal',

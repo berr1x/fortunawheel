@@ -221,7 +221,7 @@ let TildaService = TildaService_1 = class TildaService {
                         html: this.WHEEL_EMAIL_HTML
                     },
                     subject: 'Колесо фортуны',
-                    'from.email': 'mail@cake-school.com',
+                    'from.email': 'mail@info.cake-school.com',
                     'from.name': 'Колесо фортуны'
                 },
                 group: 'personal',

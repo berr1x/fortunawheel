@@ -474,16 +474,89 @@ let AdminService = class AdminService {
         });
     }
     async exportPurchasesToExcel() {
-        const data = await this.getPurchasesData();
-        const worksheet = XLSX.utils.json_to_sheet(data);
+        const purchases = await this.prisma.purchases.findMany({
+            include: {
+                user: { select: { email: true } }
+            },
+            orderBy: { created_at: 'desc' }
+        });
+        const allProductsSet = new Set();
+        for (const p of purchases) {
+            const list = Array.isArray(p.products) ? p.products : [];
+            for (const item of list)
+                allProductsSet.add(String(item));
+        }
+        const allProducts = Array.from(allProductsSet.values()).sort();
+        const rows = purchases.map(p => {
+            const base = {
+                name: p.name || 'Не указано',
+                phone: p.phone || 'Не указан',
+                email: p.user?.email || p.customer_email || 'Не указан',
+                amount: p.amount,
+                spinsEarned: p.spins_earned,
+                createdAt: p.created_at
+            };
+            const list = new Set(Array.isArray(p.products) ? p.products.map(String) : []);
+            for (const product of allProducts) {
+                base[product] = list.has(product) ? 1 : 0;
+            }
+            return base;
+        });
+        const worksheet = XLSX.utils.json_to_sheet(rows);
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, 'Покупки');
         const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
         return buffer;
     }
     async exportSpinsToExcel() {
-        const data = await this.getSpinsData();
-        const worksheet = XLSX.utils.json_to_sheet(data);
+        const users = await this.prisma.users.findMany({
+            include: {
+                purchases: {
+                    select: { amount: true, spins_earned: true, name: true, phone: true }
+                },
+                spin_sessions: { select: { spins_total: true, spins_used: true } },
+                spin_results: {
+                    include: { prize: { select: { name: true } } }
+                }
+            },
+            orderBy: { created_at: 'desc' }
+        });
+        const allPrizeNamesSet = new Set();
+        for (const u of users) {
+            for (const r of u.spin_results) {
+                if (r.prize?.name)
+                    allPrizeNamesSet.add(r.prize.name);
+            }
+        }
+        const allPrizeNames = Array.from(allPrizeNamesSet.values()).sort();
+        const rows = users.map(u => {
+            const totalPurchaseAmount = u.purchases.reduce((sum, p) => sum + p.amount, 0);
+            const totalSpinsEarned = u.purchases.reduce((sum, p) => sum + p.spins_earned, 0);
+            const totalSpinsUsed = u.spin_sessions.reduce((sum, s) => sum + s.spins_used, 0);
+            const spinsRemaining = totalSpinsEarned - totalSpinsUsed;
+            const lastPurchase = u.purchases[0];
+            const base = {
+                name: lastPurchase?.name || 'Не указано',
+                phone: lastPurchase?.phone || 'Не указан',
+                email: u.email,
+                purchaseAmount: totalPurchaseAmount,
+                totalSpins: totalSpinsEarned,
+                spinsRemaining,
+                createdAt: u.created_at
+            };
+            const counts = u.spin_results.reduce((acc, r) => {
+                const name = r.prize?.name || '';
+                if (!name)
+                    return acc;
+                acc[name] = (acc[name] || 0) + 1;
+                return acc;
+            }, {});
+            for (const prizeName of allPrizeNames) {
+                base[prizeName] = counts[prizeName] || 0;
+            }
+            return base;
+        });
+        const worksheet = XLSX.utils.json_to_sheet(rows);
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, 'Прокрутки');
         const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });

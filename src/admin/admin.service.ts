@@ -19,7 +19,9 @@ export class AdminService {
     const where = search ? {
       OR: [
         { email: { contains: search, mode: 'insensitive' as const } },
-        { customer_email: { contains: search, mode: 'insensitive' as const } }
+        { customer_email: { contains: search, mode: 'insensitive' as const } },
+        { phone: { contains: search, mode: 'insensitive' as const } },
+        { name: { contains: search, mode: 'insensitive' as const } }
       ]
     } : {};
 
@@ -511,8 +513,18 @@ export class AdminService {
   /**
    * Получить данные о покупках для экспорта в Excel
    */
-  async getPurchasesData() {
-    const purchases = await this.prisma.purchases.findMany({
+	async getPurchasesData(search?: string) {
+		const where = search ? {
+			OR: [
+				{ name: { contains: search, mode: 'insensitive' as const } },
+				{ phone: { contains: search, mode: 'insensitive' as const } },
+				{ customer_email: { contains: search, mode: 'insensitive' as const } },
+				{ user: { email: { contains: search, mode: 'insensitive' as const } } }
+			]
+		} : {};
+
+		const purchases = await this.prisma.purchases.findMany({
+			where,
       include: {
         user: {
           select: {
@@ -537,8 +549,18 @@ export class AdminService {
   /**
    * Получить данные о прокрутках для экспорта в Excel
    */
-  async getSpinsData() {
+  async getSpinsData(search?: string) {
+    const where = search ? {
+      OR: [
+        { email: { contains: search, mode: 'insensitive' as const } },
+        { customer_email: { contains: search, mode: 'insensitive' as const } },
+        { phone: { contains: search, mode: 'insensitive' as const } },
+        { name: { contains: search, mode: 'insensitive' as const } }
+      ]
+    } : {};
+
     const users = await this.prisma.users.findMany({
+      where,
       include: {
         purchases: {
           select: {
@@ -615,9 +637,40 @@ export class AdminService {
    * Экспортировать данные о покупках в Excel
    */
   async exportPurchasesToExcel() {
-    const data = await this.getPurchasesData();
-    
-    const worksheet = XLSX.utils.json_to_sheet(data);
+		// Получаем покупки с продуктами (массив) и email пользователя
+		const purchases = await this.prisma.purchases.findMany({
+			include: {
+				user: { select: { email: true } }
+			},
+			orderBy: { created_at: 'desc' }
+		});
+
+		// Собираем множество всех товаров
+		const allProductsSet = new Set<string>();
+		for (const p of purchases) {
+			const list = Array.isArray(p.products) ? p.products : [];
+			for (const item of list) allProductsSet.add(String(item));
+		}
+		const allProducts = Array.from(allProductsSet.values()).sort();
+
+		// Формируем строки: базовые поля + бинарные столбцы по товарам
+		const rows = purchases.map(p => {
+			const base: Record<string, any> = {
+				name: p.name || 'Не указано',
+				phone: p.phone || 'Не указан',
+				email: p.user?.email || p.customer_email || 'Не указан',
+				amount: p.amount,
+				spinsEarned: p.spins_earned,
+				createdAt: p.created_at
+			};
+			const list = new Set(Array.isArray(p.products) ? p.products.map(String) : []);
+			for (const product of allProducts) {
+				base[product] = list.has(product) ? 1 : 0;
+			}
+			return base;
+		});
+		
+		const worksheet = XLSX.utils.json_to_sheet(rows);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Покупки');
 
@@ -629,9 +682,58 @@ export class AdminService {
    * Экспортировать данные о прокрутках в Excel
    */
   async exportSpinsToExcel() {
-    const data = await this.getSpinsData();
-    
-    const worksheet = XLSX.utils.json_to_sheet(data);
+		// Загружаем пользователей с покупками и результатами
+		const users = await this.prisma.users.findMany({
+			include: {
+				purchases: {
+					select: { amount: true, spins_earned: true, name: true, phone: true }
+				},
+				spin_sessions: { select: { spins_total: true, spins_used: true } },
+				spin_results: {
+					include: { prize: { select: { name: true } } }
+				}
+			},
+			orderBy: { created_at: 'desc' }
+		});
+
+		// Собираем множество всех названий призов
+		const allPrizeNamesSet = new Set<string>();
+		for (const u of users) {
+			for (const r of u.spin_results) {
+				if (r.prize?.name) allPrizeNamesSet.add(r.prize.name);
+			}
+		}
+		const allPrizeNames = Array.from(allPrizeNamesSet.values()).sort();
+
+		const rows = users.map(u => {
+			const totalPurchaseAmount = u.purchases.reduce((sum, p) => sum + p.amount, 0);
+			const totalSpinsEarned = u.purchases.reduce((sum, p) => sum + p.spins_earned, 0);
+			const totalSpinsUsed = u.spin_sessions.reduce((sum, s) => sum + s.spins_used, 0);
+			const spinsRemaining = totalSpinsEarned - totalSpinsUsed;
+			const lastPurchase = u.purchases[0];
+			const base: Record<string, any> = {
+				name: lastPurchase?.name || 'Не указано',
+				phone: lastPurchase?.phone || 'Не указан',
+				email: u.email,
+				purchaseAmount: totalPurchaseAmount,
+				totalSpins: totalSpinsEarned,
+				spinsRemaining,
+				createdAt: u.created_at
+			};
+			// Считаем призы по имени
+			const counts = u.spin_results.reduce((acc, r) => {
+				const name = r.prize?.name || '';
+				if (!name) return acc;
+				acc[name] = (acc[name] || 0) + 1;
+				return acc;
+			}, {} as Record<string, number>);
+			for (const prizeName of allPrizeNames) {
+				base[prizeName] = counts[prizeName] || 0;
+			}
+			return base;
+		});
+
+		const worksheet = XLSX.utils.json_to_sheet(rows);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Прокрутки');
 
