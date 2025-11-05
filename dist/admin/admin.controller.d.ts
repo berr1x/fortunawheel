@@ -188,7 +188,7 @@ export declare class AdminController {
     deleteMandatoryPrize(mandatoryPrizeId: string): Promise<{
         message: string;
     }>;
-    getPurchasesData(): Promise<{
+    getPurchasesData(search?: string): Promise<{
         name: string;
         phone: string;
         email: string;
@@ -198,7 +198,7 @@ export declare class AdminController {
         createdAt: Date;
     }[]>;
     exportPurchasesToExcel(res: Response): Promise<void>;
-    getSpinsData(): Promise<{
+    getSpinsData(search?: string): Promise<{
         name: string;
         phone: string;
         email: string;

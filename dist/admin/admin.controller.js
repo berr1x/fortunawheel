@@ -59,8 +59,8 @@ let AdminController = class AdminController {
     async deleteMandatoryPrize(mandatoryPrizeId) {
         return await this.adminService.deleteMandatoryPrize(parseInt(mandatoryPrizeId));
     }
-    async getPurchasesData() {
-        return await this.adminService.getPurchasesData();
+    async getPurchasesData(search) {
+        return await this.adminService.getPurchasesData(search);
     }
     async exportPurchasesToExcel(res) {
         const buffer = await this.adminService.exportPurchasesToExcel();
@@ -71,8 +71,8 @@ let AdminController = class AdminController {
         });
         res.send(buffer);
     }
-    async getSpinsData() {
-        return await this.adminService.getSpinsData();
+    async getSpinsData(search) {
+        return await this.adminService.getSpinsData(search);
     }
     async exportSpinsToExcel(res) {
         const buffer = await this.adminService.exportSpinsToExcel();
@@ -375,8 +375,9 @@ __decorate([
             ]
         }
     }),
+    __param(0, (0, common_1.Query)('search')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], AdminController.prototype, "getPurchasesData", null);
 __decorate([
@@ -433,8 +434,9 @@ __decorate([
             ]
         }
     }),
+    __param(0, (0, common_1.Query)('search')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], AdminController.prototype, "getSpinsData", null);
 __decorate([

@@ -53,8 +53,7 @@ let AdminService = class AdminService {
     async getUsers(search) {
         const where = search ? {
             OR: [
-                { email: { contains: search, mode: 'insensitive' } },
-                { customer_email: { contains: search, mode: 'insensitive' } }
+                { email: { contains: search, mode: 'insensitive' } }
             ]
         } : {};
         const users = await this.prisma.users.findMany({
@@ -387,8 +386,15 @@ let AdminService = class AdminService {
         });
         return { message: 'Обязательный приз успешно удален' };
     }
-    async getPurchasesData() {
+    async getPurchasesData(search) {
+        const where = search ? {
+            OR: [
+                { name: { contains: search, mode: 'insensitive' } },
+                { phone: { contains: search, mode: 'insensitive' } },
+            ]
+        } : {};
         const purchases = await this.prisma.purchases.findMany({
+            where,
             include: {
                 user: {
                     select: {
@@ -408,8 +414,14 @@ let AdminService = class AdminService {
             createdAt: purchase.created_at
         }));
     }
-    async getSpinsData() {
+    async getSpinsData(search) {
+        const where = search ? {
+            OR: [
+                { email: { contains: search, mode: 'insensitive' } },
+            ]
+        } : {};
         const users = await this.prisma.users.findMany({
+            where,
             include: {
                 purchases: {
                     select: {

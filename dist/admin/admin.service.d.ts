@@ -185,7 +185,7 @@ export declare class AdminService {
     deleteMandatoryPrize(mandatoryPrizeId: number): Promise<{
         message: string;
     }>;
-    getPurchasesData(): Promise<{
+    getPurchasesData(search?: string): Promise<{
         name: string;
         phone: string;
         email: string;
@@ -194,7 +194,7 @@ export declare class AdminService {
         spinsEarned: number;
         createdAt: Date;
     }[]>;
-    getSpinsData(): Promise<{
+    getSpinsData(search?: string): Promise<{
         name: string;
         phone: string;
         email: string;

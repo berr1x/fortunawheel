@@ -18,10 +18,7 @@ export class AdminService {
   async getUsers(search?: string) {
     const where = search ? {
       OR: [
-        { email: { contains: search, mode: 'insensitive' as const } },
-        { customer_email: { contains: search, mode: 'insensitive' as const } },
-        { phone: { contains: search, mode: 'insensitive' as const } },
-        { name: { contains: search, mode: 'insensitive' as const } }
+        { email: { contains: search, mode: 'insensitive' as const } }
       ]
     } : {};
 
@@ -518,8 +515,6 @@ export class AdminService {
 			OR: [
 				{ name: { contains: search, mode: 'insensitive' as const } },
 				{ phone: { contains: search, mode: 'insensitive' as const } },
-				{ customer_email: { contains: search, mode: 'insensitive' as const } },
-				{ user: { email: { contains: search, mode: 'insensitive' as const } } }
 			]
 		} : {};
 
@@ -553,9 +548,6 @@ export class AdminService {
     const where = search ? {
       OR: [
         { email: { contains: search, mode: 'insensitive' as const } },
-        { customer_email: { contains: search, mode: 'insensitive' as const } },
-        { phone: { contains: search, mode: 'insensitive' as const } },
-        { name: { contains: search, mode: 'insensitive' as const } }
       ]
     } : {};
 
