@@ -391,6 +391,8 @@ let AdminService = class AdminService {
             OR: [
                 { name: { contains: search, mode: 'insensitive' } },
                 { phone: { contains: search, mode: 'insensitive' } },
+                { customer_email: { contains: search, mode: 'insensitive' } },
+                { user: { email: { contains: search, mode: 'insensitive' } } },
             ]
         } : {};
         const purchases = await this.prisma.purchases.findMany({
@@ -418,6 +420,8 @@ let AdminService = class AdminService {
         const where = search ? {
             OR: [
                 { email: { contains: search, mode: 'insensitive' } },
+                { purchases: { some: { name: { contains: search, mode: 'insensitive' } } } },
+                { purchases: { some: { phone: { contains: search, mode: 'insensitive' } } } },
             ]
         } : {};
         const users = await this.prisma.users.findMany({
