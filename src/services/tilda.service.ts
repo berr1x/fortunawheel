@@ -1,6 +1,8 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 import axios from 'axios';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
 /**
  * Сервис для интеграции с Tilda
@@ -11,81 +13,20 @@ export class TildaService {
   private readonly logger = new Logger(TildaService.name);
   private readonly SENDSAY_API_URL = 'https://api.sendsay.ru/general/api/v100/json/cakeschool';
 
-  // HTML содержимое письма
-  private readonly WHEEL_EMAIL_HTML = `<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Письмо Cake School</title>
-	 <style>
-        /* Общие стили */
-        body {
-            font-family: Inter, sans-serif;
-            background-color: #EDEDED;
-            margin: 0;
-            padding: 0;
-        }
+  // HTML содержимое письма (загружается из файла)
+  private readonly WHEEL_EMAIL_HTML: string;
 
-        h1, p, ul li {
-            font-size: 1.2rem; /* Установка размера в rem */
-        }
-
-        /* Медиа-запросы для небольших экранов (мобильные устройства) */
-        @media only screen and (max-width: 600px) {
-            h1, p, ul li {
-                font-size: 1.2rem; /* Уменьшение шрифтов для маленьких экранов */
-            }
-            .cta-button {
-                font-size: 1.2rem;
-            }
-        }
-
-        /* Медиа-запросы для средних экранов (планшеты) */
-        @media only screen and (max-width: 768px) {
-            h1, p, ul li {
-                font-size: 1.4rem; /* Подстройка шрифтов для планшетов */
-            }
-        }
-	</style></head><body style="font-family: Inter, sans-serif; background-color: #EDEDED; margin: 0; padding: 0;">
-
-<div class="container" style="max-width: 600px; margin: 0 auto; background-color: #EDEDED; padding: 4%;">
-
-    <div class="header" style="text-align: center;">
-
-		<img src="https://sun9-28.userapi.com/impg/fa_O0d4uRLsYsZqOtpsO1HnTBoOCmdIGVACr5A/gVg-93_e-fc.jpg?size=1100x476&quality=95&sign=5c6e6f9c8fd35a318d644cdc4d72ee00&type=album" style="width: 100%;border-radius:23px;vertical-align: bottom;" />
-
-    </div>
-
-<div class="banana" style="box-sizing: border-box;width: 100%; background-color: #CBB395; padding: 1em 2em 1.5em; margin-left: 0px; margin-top: 7px; border-radius: 20px;">
-      <p style="font-size: 1.4rem; font-weight: bold; color: black;">Испытайте удачу в беспроигрышном колесе фортуны от Cake School 🎁</p>
-			<p style="font-size: 1.1rem; color: black!important;">Больше 1000 гарантированных призов ждут вас!
-</p>
-	<a class="cta-button" href="https://cake-school-fortuna.com/" style="display: block; text-align: center; background-color: black; color: #CBB395; padding: 0.8em; text-decoration: none; border-radius: 50px; font-size: 1.1rem; margin: 1.4em 0; text-transform: uppercase; font-weight: bold;">Крутить колесо</a>
-		<p style="font-size: 1.4rem; font-weight: bold; color: black;">Важно!</p>
-			<p style="font-size: 1.1rem; color: black!important;">Колесо Фортуны – рандомный розыгрыш подарков. Перекрутить колесо будет нельзя, даже если у вас уже есть такой подарок.</p>
-
-		</div>
-
-    <div class="footer" style="text-align: center; margin-top: 40px;">
-      <p style="text-transform: uppercase; font-size: 1.5rem; margin: 20px 0; text-align: center;color:#000;"><strong>Мы на связи</strong></p>
-      <div class="social-icons" style="text-align: center; margin: 20px 0;">
-       <a href="https://youtube.com/@cake_school?feature=shared"><img src="https://sun9-50.userapi.com/impg/Ovi3PGEaA40e8MZwdPesT4Es5BA9x_38RKv_LQ/6jyPcEV-WEE.jpg?size=56x57&quality=95&sign=ed7ce052e9ba099089e187549a33126c&type=album" alt="YouTube" style="width: 58px; border-radius:50%;" /></a>
-        <a href="https://www.instagram.com/cake_school"> <img src="https://sun9-65.userapi.com/impg/5-DyvQq1D8ZmOQwSBcDnvQwFlvIemBLMvAImoQ/YBhhrHVsAF0.jpg?size=57x57&quality=95&sign=60d5b21401864e9b11284999b0a00887&type=album" alt="Instagram" style="width: 58px; border-radius:50%;" /></a>
-         <a href="https://vk.com/kursy_konditera"><img src="https://sun9-19.userapi.com/impg/4MrVeLeS-A9qufcmIAJ14FvVwmlnaiIkuWL7DQ/OOqDI1gKjAI.jpg?size=57x57&quality=95&sign=dced4650d473af8e9ef334ad1db31cff&type=album" alt="VK" style="width: 58px; border-radius:50%;" /></a>
-         <a href="https://t.me/cake_school"><img src="https://sun9-28.userapi.com/impg/VFswXHiihMMP8jQYiCUYMYhZvBv3ffCTa6QoMQ/cvQhPorNYQA.jpg?size=56x57&quality=95&sign=174f354878e4cfee47d19e38e940268d&type=album" alt="Telegram" style="width: 58px; border-radius:50%;" /></a>
-        <a href="https://api.whatsapp.com/send?phone=79384418742"> <img src="https://sun1-97.userapi.com/impg/VCXPSTESRS1KT_J8aBLjGUHiZQ6u3sPDpbtO5A/rkx3khBkKcc.jpg?size=57x57&quality=95&sign=a896ac1a676fa055bc5955572eed7245&type=album" alt="WhatsApp" style="width: 58px; border-radius:50%;" /></a>
-      </div>
-      <hr style="border: 1px solid white; margin: 50px 0;" />
-      <img style="width: 100px;" src="https://bryandaby.ru/wp-content/uploads/2024/10/12.png" alt="ava" />
-      <p style="font-size: 1.2rem;color:#000;">С любовью, Алина Макарова<br><a href="https://cake-school.com" style="color: #CBB395;">cake-school.com</a></p>
-    </div>
-
-</div>
-
-</body></html>`;
-
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) {
+    // Загружаем HTML шаблон из файла при инициализации
+    try {
+      const templatePath = join(__dirname, '..', 'mails', 'registration.html');
+      this.WHEEL_EMAIL_HTML = readFileSync(templatePath, 'utf-8');
+      this.logger.log('Registration email template loaded successfully');
+    } catch (error) {
+      this.logger.error('Failed to load registration email template:', error);
+      throw new Error('Failed to load registration email template');
+    }
+  }
 
   /**
    * Основной метод обработки покупки от Tilda

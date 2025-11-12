@@ -98,7 +98,7 @@ export declare class WheelService {
         status: string;
         wonAt: Date;
     }[]>;
-    private createPrizeEmailHTML;
+    private getPrizeEmailHTML;
     private formatDateForSendsay;
     private sendPrizeEmail;
 }

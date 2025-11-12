@@ -4,6 +4,8 @@ import { RedisService } from './redis.service';
 import { MandatoryPrizesService, MandatoryPrize } from './mandatory-prizes.service';
 import { BACKEND_URL } from '../config/api.config';
 import axios from 'axios';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
 interface Prize {
   id: number;
@@ -347,8 +349,7 @@ export class WheelService {
       try {
         await this.sendPrizeEmail(
           session.user.email,
-          spinResult.prize.name,
-          this.getPrizeImageUrl(spinResult.prize.image)
+          spinResult.prize.number,
         );
         this.logger.log(`Prize email sent successfully to ${session.user.email} for prize: ${spinResult.prize.name}`);
       } catch (emailError) {
@@ -1033,86 +1034,42 @@ export class WheelService {
   }
 
   /**
-   * Создает HTML шаблон для письма с выпавшим призом
-   * @param prizeName - Название приза
-   * @param prizeImage - URL изображения приза
+   * Загружает HTML шаблон для письма с выпавшим призом в зависимости от номера приза
+   * @param prizeNumber - Номер приза (1-12)
    * @returns HTML содержимое письма
    */
-  private createPrizeEmailHTML(prizeName: string, prizeImage: string | null): string {
-    const imageHtml = prizeImage 
-      ? `<img src="${prizeImage}" alt="${prizeName}" style="width: 200px; height: 200px; object-fit: cover; border-radius: 15px; margin: 20px 0;" />`
-      : '';
+  private getPrizeEmailHTML(prizeNumber: number): string {
+    // Маппинг номеров призов на имена файлов
+    const prizeFileMap: Record<number, string> = {
+      1: 'item_mycake.html',
+      2: 'item_mixer.html',
+      3: 'item_browny.html',
+      4: 'item_book.html',
+      5: 'item_promocode.html',
+      6: 'item_blackticket.html',
+      7: 'item_blender.html',
+      8: 'item_guide.html',
+      9: 'item_mooncake.html',
+      10: 'item_conditerbox.html',
+      11: 'item_laws.html',
+      12: 'item_goldticket.html',
+    };
 
-    return `<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Поздравляем! Вы выиграли приз!</title>
-    <style>
-        body {
-            font-family: Inter, sans-serif;
-            background-color: #EDEDED;
-            margin: 0;
-            padding: 0;
-        }
-        .container {
-            max-width: 600px;
-            margin: 0 auto;
-            background-color: #EDEDED;
-            padding: 4%;
-        }
-        .prize-card {
-            background-color: #CBB395;
-            padding: 2em;
-            border-radius: 20px;
-            text-align: center;
-            margin: 20px 0;
-        }
-        .prize-title {
-            font-size: 2rem;
-            font-weight: bold;
-            color: black;
-            margin: 20px 0;
-        }
-        .prize-name {
-            font-size: 1.5rem;
-            font-weight: bold;
-            color: #2c3e50;
-            margin: 20px 0;
-        }
-        .congratulations {
-            font-size: 1.2rem;
-            color: black;
-            margin: 20px 0;
-        }
-        .footer {
-            text-align: center;
-            margin-top: 40px;
-        }
-        .footer p {
-            font-size: 1.2rem;
-            color: #000;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="prize-card">
-            <h1 class="prize-title">🎉 Поздравляем! 🎉</h1>
-            <p class="congratulations">Вы выиграли приз в колесе фортуны!</p>
-            <div class="prize-name">${prizeName}</div>
-            ${imageHtml}
-            <p class="congratulations">Спасибо за участие в акции Cake School!</p>
-        </div>
-        
-        <div class="footer">
-            <p>С любовью, команда Cake School</p>
-            <p><a href="https://cake-school.com" style="color: #CBB395;">cake-school.com</a></p>
-        </div>
-    </div>
-</body>
-</html>`;
+    const fileName = prizeFileMap[prizeNumber];
+    if (!fileName) {
+      this.logger.error(`Unknown prize number: ${prizeNumber}`);
+      throw new BadRequestException(`Unknown prize number: ${prizeNumber}`);
+    }
+
+    try {
+      const templatePath = join(__dirname, '..', 'mails', fileName);
+      const html = readFileSync(templatePath, 'utf-8');
+      this.logger.log(`Loaded prize email template: ${fileName} for prize number ${prizeNumber}`);
+      return html;
+    } catch (error) {
+      this.logger.error(`Failed to load prize email template ${fileName}:`, error);
+      throw new Error(`Failed to load prize email template: ${fileName}`);
+    }
   }
 
   /**
@@ -1133,11 +1090,10 @@ export class WheelService {
   /**
    * Отправляет письмо о выпавшем призе через Sendsay API
    * @param email - Email получателя
-   * @param prizeName - Название выпавшего приза
-   * @param prizeImage - URL изображения приза
+   * @param prizeNumber - Номер приза (1-12)
    * @returns Результат отправки письма
    */
-  private async sendPrizeEmail(email: string, prizeName: string, prizeImage: string | null) {
+  private async sendPrizeEmail(email: string, prizeNumber: number) {
     try {
       // Рассчитываем время отправки (текущее время + 5 минут)
       const sendTime = new Date();
@@ -1147,7 +1103,7 @@ export class WheelService {
         action: 'issue.send',
         letter: {
           message: {
-            html: this.createPrizeEmailHTML(prizeName, prizeImage)
+            html: this.getPrizeEmailHTML(prizeNumber)
           },
           subject: 'Поздравляем! Вы выиграли приз!',
           'from.email': 'mail@info.cake-school.com',
