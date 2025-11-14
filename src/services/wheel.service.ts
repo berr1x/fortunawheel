@@ -73,7 +73,7 @@ export class WheelService {
     return await this.prisma.$transaction(async (tx) => {
       // 1. Найти пользователя по email
       const user = await tx.users.findUnique({
-        where: { email },
+        where: { email: email.toLowerCase() as string },
       });
 
       // Если пользователь не существует, возвращаем success: false
@@ -98,7 +98,7 @@ export class WheelService {
       // Если есть активная сессия, возвращаем её
       if (session) {
         // Получаем выигранные призы пользователя
-        const wonPrizes = await this.getUserWonPrizes(email);
+        const wonPrizes = await this.getUserWonPrizes(email.toLowerCase() as string);
         
         return {
           success: true,
@@ -123,7 +123,7 @@ export class WheelService {
       // Если у пользователя нет покупок, возвращаем success: true с 0 прокрутками
       if (purchases.length === 0) {
         // Получаем выигранные призы пользователя
-        const wonPrizes = await this.getUserWonPrizes(email);
+        const wonPrizes = await this.getUserWonPrizes(email.toLowerCase() as string);
         
         return {
           success: true,
@@ -151,7 +151,7 @@ export class WheelService {
       // Если все прокруты уже использованы, возвращаем success: true с 0 прокрутками
       if (availablePurchases.length === 0) {
         // Получаем выигранные призы пользователя
-        const wonPrizes = await this.getUserWonPrizes(email);
+        const wonPrizes = await this.getUserWonPrizes(email.toLowerCase() as string);
         
         return {
           success: true,
@@ -168,7 +168,7 @@ export class WheelService {
         const purchase = availablePurchases.find(p => p.id === purchaseId);
         if (!purchase) {
           // Получаем выигранные призы пользователя
-          const wonPrizes = await this.getUserWonPrizes(email);
+          const wonPrizes = await this.getUserWonPrizes(email.toLowerCase() as string);
           
           return {
             success: true,
@@ -191,7 +191,7 @@ export class WheelService {
         });
 
         // Получаем выигранные призы пользователя
-        const wonPrizes = await this.getUserWonPrizes(email);
+        const wonPrizes = await this.getUserWonPrizes(email.toLowerCase() as string);
         
         return {
           success: true,
@@ -216,7 +216,7 @@ export class WheelService {
       });
 
       // Получаем выигранные призы пользователя
-      const wonPrizes = await this.getUserWonPrizes(email);
+      const wonPrizes = await this.getUserWonPrizes(email.toLowerCase() as string);
       
       return {
         success: true,
@@ -463,7 +463,16 @@ export class WheelService {
     // Проверяем overchance призы (приоритет №2) - выпадают первыми
     const overchancePrizes = availablePrizes.filter(prize => prize.type === 'overchance');
     if (overchancePrizes.length > 0) {
-      return this.selectRandomPrize(overchancePrizes);
+      // Применяем ограничения на повторения для overchance призов
+      const filteredOverchance = this.filterPrizesByRepetitionLimits(
+        overchancePrizes,
+        previousResults,
+        spinsUsed + 1,
+        false
+      );
+      if (filteredOverchance.length > 0) {
+        return this.selectRandomPrize(filteredOverchance);
+      }
     }
     
     // Получаем обязательные подарки за последние 24 часа
@@ -507,16 +516,26 @@ export class WheelService {
     }
     
     // Логика для 5+ прокруток - могут повторяться
-    if (spinsUsed >= 4) {
+    if (spinsUsed >= 5) {
       // Сначала проверяем обязательные подарки
       const availableMandatory = availablePrizes.filter(prize => 
         mandatoryPrizes.some(mp => mp.prize.id === prize.id)
       );
       
       if (availableMandatory.length > 0) {
-        // 70% шанс выдать обязательный подарок
-        if (Math.random() < 0.7) {
-          return this.selectRandomPrize(availableMandatory);
+        // Применяем ограничения на повторения для обязательных подарков
+        const filteredMandatory = this.filterPrizesByRepetitionLimits(
+          availableMandatory,
+          previousResults,
+          spinsUsed + 1,
+          false
+        );
+        
+        if (filteredMandatory.length > 0) {
+          // 70% шанс выдать обязательный подарок
+          if (Math.random() < 0.7) {
+            return this.selectRandomPrize(filteredMandatory);
+          }
         }
       }
       
@@ -704,7 +723,9 @@ export class WheelService {
     
     return prizes.filter(prize => {
       const repetitions = this.countPrizeRepetitions(prize.id, previousResults);
-      return repetitions <= maxRepetitions;
+      // Если repetitions = maxRepetitions, значит уже было выдано максимальное количество
+      // следующий приз будет превышать лимит, поэтому используем строгое сравнение
+      return repetitions < maxRepetitions;
     });
   }
 
@@ -1073,6 +1094,36 @@ export class WheelService {
   }
 
   /**
+   * Получает subject письма в зависимости от номера приза
+   * @param prizeNumber - Номер приза (1-12)
+   * @returns Subject письма
+   */
+  private getPrizeEmailSubject(prizeNumber: number): string {
+    const prizeSubjectMap: Record<number, string> = {
+      1: 'Ваш подарок — промокод My Cake🎁',
+      2: 'Ваш подарок — миксер🎁',
+      3: 'Ваш подарок — мини-курс🎁',
+      4: 'Ваш подарок — книга🎁',
+      5: 'Ваш подарок — промокод на обучение🎁',
+      6: 'Ваш подарок — чёрный билет🎁',
+      7: 'Ваш подарок — блендер 🎁',
+      8: 'Ваш подарок — гайд🎁',
+      9: 'Ваш подарок — мини-курс🎁',
+      10: 'Ваш подарок — бокс кондитера 🎁',
+      11: 'Ваш подарок — гайд🎁',
+      12: 'Ваш подарок — золотой билет🎁',
+    };
+
+    const subject = prizeSubjectMap[prizeNumber];
+    if (!subject) {
+      this.logger.error(`Unknown prize number: ${prizeNumber}`);
+      throw new BadRequestException(`Unknown prize number: ${prizeNumber}`);
+    }
+
+    return subject;
+  }
+
+  /**
    * Форматирует дату для Sendsay API (YYYY:MM:DD hh:mm)
    * @param date - Дата для форматирования
    * @returns Отформатированная строка даты аку
@@ -1105,7 +1156,7 @@ export class WheelService {
           message: {
             html: this.getPrizeEmailHTML(prizeNumber)
           },
-          subject: 'Поздравляем! Вы выиграли приз!',
+          subject: this.getPrizeEmailSubject(prizeNumber),
           'from.email': 'mail@info.cake-school.com',
           'from.name': 'Колесо фортуны'
         },

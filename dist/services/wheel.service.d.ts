@@ -99,6 +99,7 @@ export declare class WheelService {
         wonAt: Date;
     }[]>;
     private getPrizeEmailHTML;
+    private getPrizeEmailSubject;
     private formatDateForSendsay;
     private sendPrizeEmail;
 }

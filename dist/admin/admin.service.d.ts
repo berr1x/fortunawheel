@@ -205,6 +205,7 @@ export declare class AdminService {
         products: string | number | true | import("generated/prisma/runtime/library").JsonObject;
         createdAt: Date;
     }[]>;
+    private autoFitColumns;
     exportPurchasesToExcel(): Promise<any>;
     exportSpinsToExcel(): Promise<any>;
 }

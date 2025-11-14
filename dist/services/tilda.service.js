@@ -47,12 +47,12 @@ let TildaService = TildaService_1 = class TildaService {
             const spinsEarned = this.calculateSpins(Number(payment.amount));
             this.logger.log(`Processing purchase: email=${Email}, phone=${Phone}, amount=${payment.amount}, spins=${spinsEarned}, products=${JSON.stringify(products)}`);
             return await this.prisma.$transaction(async (tx) => {
-                const user = await this.findOrCreateUser(tx, Email);
+                const user = await this.findOrCreateUser(tx, Email.toLowerCase());
                 const purchase = await this.createPurchase(tx, user.id, {
                     order_id: payment.orderid,
                     amount: Number(payment.amount),
                     spins_earned: spinsEarned,
-                    customer_email: Email,
+                    customer_email: Email.toLowerCase(),
                     phone: Phone,
                     products: products,
                     name: Name
@@ -62,7 +62,7 @@ let TildaService = TildaService_1 = class TildaService {
                     session = await this.createSpinSession(tx, user.id, purchase.id, spinsEarned);
                     this.logger.log(`Successfully created session ${session.id} with ${spinsEarned} spins for user ${Email}`);
                     try {
-                        await this.sendWheelEmail(Email);
+                        await this.sendWheelEmail(Email.toLowerCase());
                         this.logger.log(`Wheel email sent successfully to ${Email}`);
                     }
                     catch (emailError) {
@@ -159,7 +159,7 @@ let TildaService = TildaService_1 = class TildaService {
                     message: {
                         html: this.WHEEL_EMAIL_HTML
                     },
-                    subject: 'Колесо фортуны',
+                    subject: 'Крутите колесо от Cake School 🎁',
                     'from.email': 'mail@info.cake-school.com',
                     'from.name': 'Колесо фортуны'
                 },

@@ -489,6 +489,24 @@ let AdminService = class AdminService {
             };
         });
     }
+    autoFitColumns(worksheet) {
+        const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
+        const colWidths = [];
+        for (let col = 0; col <= range.e.c; col++) {
+            let maxWidth = 10;
+            for (let row = 0; row <= range.e.r; row++) {
+                const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+                const cell = worksheet[cellAddress];
+                if (cell && cell.v) {
+                    const cellValue = String(cell.v);
+                    const cellLength = cellValue.length;
+                    maxWidth = Math.max(maxWidth, cellLength + 2);
+                }
+            }
+            colWidths.push(maxWidth);
+        }
+        worksheet['!cols'] = colWidths.map(width => ({ wch: Math.min(width, 50) }));
+    }
     async exportPurchasesToExcel() {
         const purchases = await this.prisma.purchases.findMany({
             include: {
@@ -496,13 +514,11 @@ let AdminService = class AdminService {
             },
             orderBy: { created_at: 'desc' }
         });
-        const allProductsSet = new Set();
+        let maxProducts = 0;
         for (const p of purchases) {
             const list = Array.isArray(p.products) ? p.products : [];
-            for (const item of list)
-                allProductsSet.add(String(item));
+            maxProducts = Math.max(maxProducts, list.length);
         }
-        const allProducts = Array.from(allProductsSet.values()).sort();
         const rows = purchases.map(p => {
             const base = {
                 name: p.name || 'Не указано',
@@ -512,13 +528,18 @@ let AdminService = class AdminService {
                 spinsEarned: p.spins_earned,
                 createdAt: p.created_at
             };
-            const list = new Set(Array.isArray(p.products) ? p.products.map(String) : []);
-            for (const product of allProducts) {
-                base[product] = list.has(product) ? 1 : 0;
+            const products = Array.isArray(p.products) ? p.products.map(String) : [];
+            for (let i = 0; i < maxProducts; i++) {
+                base[`product${i + 1}`] = products[i] || '';
             }
             return base;
         });
         const worksheet = XLSX.utils.json_to_sheet(rows);
+        for (let i = 1; i <= maxProducts; i++) {
+            const cellAddress = XLSX.utils.encode_cell({ r: 0, c: 6 + i - 1 });
+            worksheet[cellAddress] = { v: '', t: 's' };
+        }
+        this.autoFitColumns(worksheet);
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, 'Покупки');
         const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
@@ -537,14 +558,10 @@ let AdminService = class AdminService {
             },
             orderBy: { created_at: 'desc' }
         });
-        const allPrizeNamesSet = new Set();
+        let maxPrizes = 0;
         for (const u of users) {
-            for (const r of u.spin_results) {
-                if (r.prize?.name)
-                    allPrizeNamesSet.add(r.prize.name);
-            }
+            maxPrizes = Math.max(maxPrizes, u.spin_results.length);
         }
-        const allPrizeNames = Array.from(allPrizeNamesSet.values()).sort();
         const rows = users.map(u => {
             const totalPurchaseAmount = u.purchases.reduce((sum, p) => sum + p.amount, 0);
             const totalSpinsEarned = u.purchases.reduce((sum, p) => sum + p.spins_earned, 0);
@@ -560,19 +577,20 @@ let AdminService = class AdminService {
                 spinsRemaining,
                 createdAt: u.created_at
             };
-            const counts = u.spin_results.reduce((acc, r) => {
-                const name = r.prize?.name || '';
-                if (!name)
-                    return acc;
-                acc[name] = (acc[name] || 0) + 1;
-                return acc;
-            }, {});
-            for (const prizeName of allPrizeNames) {
-                base[prizeName] = counts[prizeName] || 0;
+            const prizeNames = u.spin_results
+                .map(r => r.prize?.name || '')
+                .filter(name => name);
+            for (let i = 0; i < maxPrizes; i++) {
+                base[`prize${i + 1}`] = prizeNames[i] || '';
             }
             return base;
         });
         const worksheet = XLSX.utils.json_to_sheet(rows);
+        for (let i = 1; i <= maxPrizes; i++) {
+            const cellAddress = XLSX.utils.encode_cell({ r: 0, c: 7 + i - 1 });
+            worksheet[cellAddress] = { v: '', t: 's' };
+        }
+        this.autoFitColumns(worksheet);
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, 'Прокрутки');
         const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });

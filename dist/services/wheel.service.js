@@ -38,7 +38,7 @@ let WheelService = WheelService_1 = class WheelService {
     async createOrGetSession(email, purchaseId) {
         return await this.prisma.$transaction(async (tx) => {
             const user = await tx.users.findUnique({
-                where: { email },
+                where: { email: email.toLowerCase() },
             });
             if (!user) {
                 return {
@@ -56,7 +56,7 @@ let WheelService = WheelService_1 = class WheelService {
                 },
             });
             if (session) {
-                const wonPrizes = await this.getUserWonPrizes(email);
+                const wonPrizes = await this.getUserWonPrizes(email.toLowerCase());
                 return {
                     success: true,
                     message: 'Активная сессия найдена.',
@@ -75,7 +75,7 @@ let WheelService = WheelService_1 = class WheelService {
                 },
             });
             if (purchases.length === 0) {
-                const wonPrizes = await this.getUserWonPrizes(email);
+                const wonPrizes = await this.getUserWonPrizes(email.toLowerCase());
                 return {
                     success: true,
                     message: 'У вас нет доступных прокруток.',
@@ -96,7 +96,7 @@ let WheelService = WheelService_1 = class WheelService {
             const usedPurchaseIds = new Set(purchasesWithSessions.map(s => s.purchase_id));
             const availablePurchases = purchases.filter(p => !usedPurchaseIds.has(p.id));
             if (availablePurchases.length === 0) {
-                const wonPrizes = await this.getUserWonPrizes(email);
+                const wonPrizes = await this.getUserWonPrizes(email.toLowerCase());
                 return {
                     success: true,
                     message: 'Все ваши прокруты уже использованы.',
@@ -109,7 +109,7 @@ let WheelService = WheelService_1 = class WheelService {
             if (purchaseId) {
                 const purchase = availablePurchases.find(p => p.id === purchaseId);
                 if (!purchase) {
-                    const wonPrizes = await this.getUserWonPrizes(email);
+                    const wonPrizes = await this.getUserWonPrizes(email.toLowerCase());
                     return {
                         success: true,
                         message: 'Указанная покупка не найдена или уже использована.',
@@ -128,7 +128,7 @@ let WheelService = WheelService_1 = class WheelService {
                         is_active: true,
                     },
                 });
-                const wonPrizes = await this.getUserWonPrizes(email);
+                const wonPrizes = await this.getUserWonPrizes(email.toLowerCase());
                 return {
                     success: true,
                     message: 'Новая сессия создана.',
@@ -148,7 +148,7 @@ let WheelService = WheelService_1 = class WheelService {
                     is_active: true,
                 },
             });
-            const wonPrizes = await this.getUserWonPrizes(email);
+            const wonPrizes = await this.getUserWonPrizes(email.toLowerCase());
             return {
                 success: true,
                 message: 'Новая сессия создана.',
@@ -291,7 +291,10 @@ let WheelService = WheelService_1 = class WheelService {
         }
         const overchancePrizes = availablePrizes.filter(prize => prize.type === 'overchance');
         if (overchancePrizes.length > 0) {
-            return this.selectRandomPrize(overchancePrizes);
+            const filteredOverchance = this.filterPrizesByRepetitionLimits(overchancePrizes, previousResults, spinsUsed + 1, false);
+            if (filteredOverchance.length > 0) {
+                return this.selectRandomPrize(filteredOverchance);
+            }
         }
         const mandatoryPrizes = await this.getMandatoryPrizes(tx);
         const abundantPrizes = availablePrizes.filter(prize => prize.type === 'many' || prize.quantity_remaining > 1000);
@@ -308,11 +311,14 @@ let WheelService = WheelService_1 = class WheelService {
                 return await this.selectPrizeByDistribution(unclaimedPrizes, wonPrizeIds, previousResults, spinsUsed + 1, tx);
             }
         }
-        if (spinsUsed >= 4) {
+        if (spinsUsed >= 5) {
             const availableMandatory = availablePrizes.filter(prize => mandatoryPrizes.some(mp => mp.prize.id === prize.id));
             if (availableMandatory.length > 0) {
-                if (Math.random() < 0.7) {
-                    return this.selectRandomPrize(availableMandatory);
+                const filteredMandatory = this.filterPrizesByRepetitionLimits(availableMandatory, previousResults, spinsUsed + 1, false);
+                if (filteredMandatory.length > 0) {
+                    if (Math.random() < 0.7) {
+                        return this.selectRandomPrize(filteredMandatory);
+                    }
                 }
             }
             return await this.selectPrizeByDistribution(availablePrizes, wonPrizeIds, previousResults, spinsUsed + 1, tx);
@@ -381,7 +387,7 @@ let WheelService = WheelService_1 = class WheelService {
         const maxRepetitions = this.getMaxAllowedRepetitions(spinNumber);
         return prizes.filter(prize => {
             const repetitions = this.countPrizeRepetitions(prize.id, previousResults);
-            return repetitions <= maxRepetitions;
+            return repetitions < maxRepetitions;
         });
     }
     async getPrizeDistributionStats(minutes = 60, tx) {
@@ -620,6 +626,28 @@ let WheelService = WheelService_1 = class WheelService {
             throw new Error(`Failed to load prize email template: ${fileName}`);
         }
     }
+    getPrizeEmailSubject(prizeNumber) {
+        const prizeSubjectMap = {
+            1: 'Ваш подарок — промокод My Cake🎁',
+            2: 'Ваш подарок — миксер🎁',
+            3: 'Ваш подарок — мини-курс🎁',
+            4: 'Ваш подарок — книга🎁',
+            5: 'Ваш подарок — промокод на обучение🎁',
+            6: 'Ваш подарок — чёрный билет🎁',
+            7: 'Ваш подарок — блендер 🎁',
+            8: 'Ваш подарок — гайд🎁',
+            9: 'Ваш подарок — мини-курс🎁',
+            10: 'Ваш подарок — бокс кондитера 🎁',
+            11: 'Ваш подарок — гайд🎁',
+            12: 'Ваш подарок — золотой билет🎁',
+        };
+        const subject = prizeSubjectMap[prizeNumber];
+        if (!subject) {
+            this.logger.error(`Unknown prize number: ${prizeNumber}`);
+            throw new common_1.BadRequestException(`Unknown prize number: ${prizeNumber}`);
+        }
+        return subject;
+    }
     formatDateForSendsay(date) {
         const year = date.getFullYear();
         const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -638,7 +666,7 @@ let WheelService = WheelService_1 = class WheelService {
                     message: {
                         html: this.getPrizeEmailHTML(prizeNumber)
                     },
-                    subject: 'Поздравляем! Вы выиграли приз!',
+                    subject: this.getPrizeEmailSubject(prizeNumber),
                     'from.email': 'mail@info.cake-school.com',
                     'from.name': 'Колесо фортуны'
                 },

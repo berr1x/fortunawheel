@@ -630,6 +630,39 @@ export class AdminService {
   }
 
   /**
+   * Автоматически подстраивает ширину столбцов по содержимому
+   * @param worksheet - Рабочий лист XLSX
+   */
+  private autoFitColumns(worksheet: XLSX.WorkSheet) {
+    const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
+    const colWidths: number[] = [];
+
+    // Проходим по всем столбцам
+    for (let col = 0; col <= range.e.c; col++) {
+      let maxWidth = 10; // Минимальная ширина
+
+      // Проходим по всем строкам в столбце
+      for (let row = 0; row <= range.e.r; row++) {
+        const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+        const cell = worksheet[cellAddress];
+
+        if (cell && cell.v) {
+          // Вычисляем длину содержимого
+          const cellValue = String(cell.v);
+          // Учитываем длину строки, добавляем небольшой запас
+          const cellLength = cellValue.length;
+          maxWidth = Math.max(maxWidth, cellLength + 2);
+        }
+      }
+
+      colWidths.push(maxWidth);
+    }
+
+    // Устанавливаем ширину столбцов
+    worksheet['!cols'] = colWidths.map(width => ({ wch: Math.min(width, 50) })); // Максимум 50 символов
+  }
+
+  /**
    * Экспортировать данные о покупках в Excel
    */
   async exportPurchasesToExcel() {
@@ -641,15 +674,14 @@ export class AdminService {
 			orderBy: { created_at: 'desc' }
 		});
 
-		// Собираем множество всех товаров
-		const allProductsSet = new Set<string>();
+		// Находим максимальное количество продуктов в одной покупке
+		let maxProducts = 0;
 		for (const p of purchases) {
 			const list = Array.isArray(p.products) ? p.products : [];
-			for (const item of list) allProductsSet.add(String(item));
+			maxProducts = Math.max(maxProducts, list.length);
 		}
-		const allProducts = Array.from(allProductsSet.values()).sort();
 
-		// Формируем строки: базовые поля + бинарные столбцы по товарам
+		// Формируем строки: базовые поля + столбцы с названиями товаров
 		const rows = purchases.map(p => {
 			const base: Record<string, any> = {
 				name: p.name || 'Не указано',
@@ -659,14 +691,22 @@ export class AdminService {
 				spinsEarned: p.spins_earned,
 				createdAt: p.created_at
 			};
-			const list = new Set(Array.isArray(p.products) ? p.products.map(String) : []);
-			for (const product of allProducts) {
-				base[product] = list.has(product) ? 1 : 0;
+			const products = Array.isArray(p.products) ? p.products.map(String) : [];
+			// Заполняем столбцы названиями товаров
+			for (let i = 0; i < maxProducts; i++) {
+				base[`product${i + 1}`] = products[i] || '';
 			}
 			return base;
 		});
 		
 		const worksheet = XLSX.utils.json_to_sheet(rows);
+		// Убираем заголовки для столбцов с товарами (заменяем на пустые)
+		for (let i = 1; i <= maxProducts; i++) {
+			const cellAddress = XLSX.utils.encode_cell({ r: 0, c: 6 + i - 1 }); // Начинаем с 7-го столбца (G)
+			worksheet[cellAddress] = { v: '', t: 's' };
+		}
+		// Автоматически подстраиваем ширину столбцов
+		this.autoFitColumns(worksheet);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Покупки');
 
@@ -692,14 +732,11 @@ export class AdminService {
 			orderBy: { created_at: 'desc' }
 		});
 
-		// Собираем множество всех названий призов
-		const allPrizeNamesSet = new Set<string>();
+		// Находим максимальное количество призов у одного пользователя
+		let maxPrizes = 0;
 		for (const u of users) {
-			for (const r of u.spin_results) {
-				if (r.prize?.name) allPrizeNamesSet.add(r.prize.name);
-			}
+			maxPrizes = Math.max(maxPrizes, u.spin_results.length);
 		}
-		const allPrizeNames = Array.from(allPrizeNamesSet.values()).sort();
 
 		const rows = users.map(u => {
 			const totalPurchaseAmount = u.purchases.reduce((sum, p) => sum + p.amount, 0);
@@ -716,20 +753,24 @@ export class AdminService {
 				spinsRemaining,
 				createdAt: u.created_at
 			};
-			// Считаем призы по имени
-			const counts = u.spin_results.reduce((acc, r) => {
-				const name = r.prize?.name || '';
-				if (!name) return acc;
-				acc[name] = (acc[name] || 0) + 1;
-				return acc;
-			}, {} as Record<string, number>);
-			for (const prizeName of allPrizeNames) {
-				base[prizeName] = counts[prizeName] || 0;
+			// Заполняем столбцы названиями призов
+			const prizeNames = u.spin_results
+				.map(r => r.prize?.name || '')
+				.filter(name => name);
+			for (let i = 0; i < maxPrizes; i++) {
+				base[`prize${i + 1}`] = prizeNames[i] || '';
 			}
 			return base;
 		});
 
 		const worksheet = XLSX.utils.json_to_sheet(rows);
+		// Убираем заголовки для столбцов с призами (заменяем на пустые)
+		for (let i = 1; i <= maxPrizes; i++) {
+			const cellAddress = XLSX.utils.encode_cell({ r: 0, c: 7 + i - 1 }); // Начинаем с 8-го столбца (H)
+			worksheet[cellAddress] = { v: '', t: 's' };
+		}
+		// Автоматически подстраиваем ширину столбцов
+		this.autoFitColumns(worksheet);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Прокрутки');
 

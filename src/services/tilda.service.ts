@@ -57,14 +57,14 @@ export class TildaService {
 
       return await this.prisma.$transaction(async (tx) => {
         // 1. Создать или найти пользователя по email
-        const user = await this.findOrCreateUser(tx, Email);
+        const user = await this.findOrCreateUser(tx, Email.toLowerCase() as string);
 
         // 2. Создать запись о покупке
         const purchase = await this.createPurchase(tx, user.id, {
           order_id: payment.orderid,
           amount: Number(payment.amount),
           spins_earned: spinsEarned,
-          customer_email: Email,
+          customer_email: Email.toLowerCase() as string,
           phone: Phone,
           products: products,
           name: Name
@@ -78,7 +78,7 @@ export class TildaService {
           
           // 4. Отправить письмо с колесом фортуны, если есть прокрутки
           try {
-            await this.sendWheelEmail(Email);
+            await this.sendWheelEmail(Email.toLowerCase() as string);
             this.logger.log(`Wheel email sent successfully to ${Email}`);
           } catch (emailError) {
             this.logger.error(`Failed to send wheel email to ${Email}:`, emailError);
@@ -235,7 +235,7 @@ export class TildaService {
           message: {
             html: this.WHEEL_EMAIL_HTML
           },
-          subject: 'Колесо фортуны',
+          subject: 'Крутите колесо от Cake School 🎁',
           'from.email': 'mail@info.cake-school.com',
           'from.name': 'Колесо фортуны'
         },
