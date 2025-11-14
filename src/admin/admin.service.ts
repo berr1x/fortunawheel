@@ -175,7 +175,7 @@ export class AdminService {
 
     // Проверяем, что пользователь с такой почтой не существует
     const existingUser = await this.prisma.users.findUnique({
-      where: { email }
+      where: { email: email.toLowerCase() as string }
     });
 
     if (existingUser) {
@@ -185,7 +185,7 @@ export class AdminService {
     // Создаем пользователя
     const user = await this.prisma.users.create({
       data: { 
-        email
+        email: email.toLowerCase() as string
       }
     });
 
@@ -196,7 +196,7 @@ export class AdminService {
           user_id: user.id,
           amount: purchaseAmount,
           spins_earned: spinsCount,
-          customer_email: email,
+          customer_email: email.toLowerCase() as string,
           name: "Не указано",
           phone: "Не указано",
           products: ["Покупка создана вручную."]
@@ -241,7 +241,7 @@ export class AdminService {
     // Если меняется email, проверяем уникальность
     if (email && email !== user.email) {
       const existingUser = await this.prisma.users.findUnique({
-        where: { email }
+        where: { email: email.toLowerCase() as string }
       });
 
       if (existingUser) {
@@ -253,7 +253,7 @@ export class AdminService {
     if (email) {
       await this.prisma.users.update({
         where: { id: userId },
-        data: { email }
+        data: { email: email.toLowerCase() as string }
       });
     }
 
