@@ -989,7 +989,7 @@ export class WheelService {
   async getUserWonPrizes(email: string) {
     // Находим пользователя
     const user = await this.prisma.users.findUnique({
-      where: { email },
+      where: { email: email.toLowerCase() as string },
     });
 
     if (!user) {
