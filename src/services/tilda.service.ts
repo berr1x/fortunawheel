@@ -47,13 +47,23 @@ export class TildaService {
         };
       }
 
+      // Проверяем, что сумма покупки не меньше 3000 рублей
+      const purchaseAmount = Number(payment.amount);
+      if (purchaseAmount < 3000) {
+        this.logger.log(`Purchase amount ${purchaseAmount} is less than 3000, skipping user registration and email sending`);
+        return {
+          success: false,
+          message: 'Purchase amount must be at least 3000 rubles',
+        };
+      }
+
       // Извлекаем список продуктов (только названия)
       const products = payment.products ? payment.products.map((product: any) => product.name) : [];
 
-      // Рассчитываем количество прокруток (каждые 50 рублей = 1 прокрутка)
-      const spinsEarned = this.calculateSpins(Number(payment.amount));
+      // Рассчитываем количество прокруток (каждые 3000 рублей = 1 прокрутка)
+      const spinsEarned = this.calculateSpins(purchaseAmount);
 
-      this.logger.log(`Processing purchase: email=${Email}, phone=${Phone}, amount=${payment.amount}, spins=${spinsEarned}, products=${JSON.stringify(products)}`);
+      this.logger.log(`Processing purchase: email=${Email}, phone=${Phone}, amount=${purchaseAmount}, spins=${spinsEarned}, products=${JSON.stringify(products)}`);
 
       return await this.prisma.$transaction(async (tx) => {
         // 1. Создать или найти пользователя по email
@@ -62,7 +72,7 @@ export class TildaService {
         // 2. Создать запись о покупке
         const purchase = await this.createPurchase(tx, user.id, {
           order_id: payment.orderid,
-          amount: Number(payment.amount),
+          amount: purchaseAmount,
           spins_earned: spinsEarned,
           customer_email: Email.toLowerCase() as string,
           phone: Phone,
@@ -85,7 +95,7 @@ export class TildaService {
             // Не прерываем выполнение, если не удалось отправить письмо
           }
         } else {
-          this.logger.warn(`No spins earned for amount ${payment.amount}, skipping session creation and email sending`);
+          this.logger.warn(`No spins earned for amount ${purchaseAmount}, skipping session creation and email sending`);
         }
 
         return {
@@ -142,13 +152,13 @@ export class TildaService {
 
   /**
    * Расчет количества прокруток на основе суммы покупки
-   * Каждые 50 рублей = 1 прокрутка
+   * Каждые 3000 рублей = 1 прокрутка
    * 
    * @param amount - Сумма покупки в рублях
    * @returns Количество прокруток
    */
   private calculateSpins(amount: number): number {
-    return Math.floor(amount / 50); // 50 рублей за прокрутку
+    return Math.floor(amount / 3000); // 3000 рублей за прокрутку
   }
 
   /**
