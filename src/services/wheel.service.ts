@@ -453,15 +453,16 @@ export class WheelService {
   ): Promise<Prize | null> {
     // Получаем уже выданные призы в этой сессии
     const wonPrizeIds = previousResults.map(result => result.prize_id);
+    const sanitizedAvailablePrizes = this.filterNumberFourLimitedMany(availablePrizes, previousResults);
     
     // Проверяем гарантированный приз (приоритет №1)
-    const guaranteedPrize = this.checkGuaranteedPrize(spinsUsed, spinsTotal, previousResults, availablePrizes);
+    const guaranteedPrize = this.checkGuaranteedPrize(spinsUsed, spinsTotal, previousResults, sanitizedAvailablePrizes);
     if (guaranteedPrize) {
       return guaranteedPrize;
     }
     
     // Проверяем overchance призы (приоритет №2) - выпадают первыми
-    const overchancePrizes = availablePrizes.filter(prize => prize.type === 'overchance');
+    const overchancePrizes = sanitizedAvailablePrizes.filter(prize => prize.type === 'overchance');
     if (overchancePrizes.length > 0) {
       // Применяем ограничения на повторения для overchance призов
       const filteredOverchance = this.filterPrizesByRepetitionLimits(
@@ -479,24 +480,24 @@ export class WheelService {
     const mandatoryPrizes = await this.getMandatoryPrizes(tx);
     
     // Определяем категории призов
-    const abundantPrizes = availablePrizes.filter(prize => 
+    const abundantPrizes = sanitizedAvailablePrizes.filter(prize => 
       prize.type === 'many' || prize.quantity_remaining > 1000
     );
-    const limitedPrizes = availablePrizes.filter(prize => 
+    const limitedPrizes = sanitizedAvailablePrizes.filter(prize => 
       prize.type === 'limited' || (prize.quantity_remaining >= 100 && prize.quantity_remaining <= 999)
     );
-    const rarePrizes = availablePrizes.filter(prize => 
+    const rarePrizes = sanitizedAvailablePrizes.filter(prize => 
       prize.type === 'rare' || prize.quantity_remaining <= 10
     );
     
     // Призы с ограничениями (количество < 20)
-    const restrictedPrizes = availablePrizes.filter(prize => 
+    const restrictedPrizes = sanitizedAvailablePrizes.filter(prize => 
       prize.quantity_remaining < 20
     );
     
     // Логика для первых 4 прокруток - неповторяющиеся подарки
     if (spinsUsed < 4) {
-      const unclaimedPrizes = availablePrizes.filter(prize => 
+      const unclaimedPrizes = sanitizedAvailablePrizes.filter(prize => 
         !wonPrizeIds.includes(prize.id)
       );
       
@@ -518,7 +519,7 @@ export class WheelService {
     // Логика для 5+ прокруток - могут повторяться
     if (spinsUsed >= 5) {
       // Сначала проверяем обязательные подарки
-      const availableMandatory = availablePrizes.filter(prize => 
+      const availableMandatory = sanitizedAvailablePrizes.filter(prize => 
         mandatoryPrizes.some(mp => mp.prize.id === prize.id)
       );
       
@@ -540,11 +541,11 @@ export class WheelService {
       }
       
       // Применяем новое распределение ко всем доступным призам
-      return await this.selectPrizeByDistribution(availablePrizes, wonPrizeIds, previousResults, spinsUsed + 1, tx);
+      return await this.selectPrizeByDistribution(sanitizedAvailablePrizes, wonPrizeIds, previousResults, spinsUsed + 1, tx);
     }
     
     // Fallback - случайный выбор из всех доступных
-    return this.selectRandomPrize(availablePrizes);
+    return this.selectRandomPrize(sanitizedAvailablePrizes);
   }
 
   /**
@@ -727,6 +728,31 @@ export class WheelService {
       // следующий приз будет превышать лимит, поэтому используем строгое сравнение
       return repetitions < maxRepetitions;
     });
+  }
+
+  /**
+   * Ограничивает приз №4 типов many/limited одним выпадением за сессию
+   */
+  private filterNumberFourLimitedMany(prizes: Prize[], previousResults: any[]): Prize[] {
+    if (!this.hasLimitedManyNumberFour(previousResults)) {
+      return prizes;
+    }
+
+    return prizes.filter(prize => !this.isLimitedManyNumberFourPrize(prize));
+  }
+
+  private hasLimitedManyNumberFour(previousResults: any[]): boolean {
+    return previousResults.some(result => {
+      const prize = result.prize as Prize | undefined;
+      if (!prize) {
+        return false;
+      }
+      return this.isLimitedManyNumberFourPrize(prize);
+    });
+  }
+
+  private isLimitedManyNumberFourPrize(prize: Prize): boolean {
+    return prize.number === 4 && (prize.type === 'many' || prize.type === 'limited');
   }
 
   /**
